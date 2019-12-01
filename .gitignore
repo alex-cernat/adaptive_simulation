@@ -1,0 +1,12 @@
+packrat/lib*/
+.Rproj.user
+*.RData
+*.dta
+*.csv
+*.zip
+*.exe
+*.dat
+*.pdf
+*.docx
+*.rin
+*.gz
