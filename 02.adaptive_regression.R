@@ -10,7 +10,11 @@
 # 0. Set-up ---------------------------------------------------------------
 
 
+# clean memory
+rm(list = ls())
+gc()
 
+# use local packages on work machine
 if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
   paste0(
     "C:/Users/",
@@ -20,7 +24,7 @@ if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
   .libPaths()
 ))}
 
-# install packages from CRAN
+# load packages
 pkg <- c("tidyverse", "haven", "lubridate",
     "devtools", "pROC")
 
@@ -28,8 +32,6 @@ sapply(pkg, library, character.only = T)
 
 
 # load functions
-functions <- str_subset(list.files("./functions/"), ".R")
-
 list.files("./functions/",
            pattern = "\\.R$",
            full.names = T) %>% 
@@ -43,6 +45,7 @@ list.files("./functions/",
 # load data
 load("./data/clean_us_v1.RData")
 
+# get vars of interest
 usw_small <- usw %>% 
   dplyr::select(agecat:education_fct, 
                 starts_with("out_"),
@@ -53,6 +56,7 @@ usw_small <- usw %>%
                 -benefit_prop, -countryofbirth,
                 -long_cond, -work_limit)
 
+# change ineligibles not non-respondents
 usw_small <- usw_small %>%
   mutate_at(vars(matches("out_")),
             funs(ifelse(. == 3, 0, .)))
