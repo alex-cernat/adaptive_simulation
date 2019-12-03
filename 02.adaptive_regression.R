@@ -1,11 +1,13 @@
----
-title: "Regression models for adaptive UKHLS"
-author: "Alexandru Cernat"
-date: "14 July 2018"
-output: html_document
----
+######################################################
+# 
+# # do regressions for R indicators 
+# 
+# 
+# 
+######################################################
 
-```{r setup, include=FALSE}
+
+# 0. Set-up ---------------------------------------------------------------
 
 
 
@@ -19,36 +21,26 @@ if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
 ))}
 
 # install packages from CRAN
-p_needed <-
-  c("tidyverse", "haven", "lubridate",
+pkg <- c("tidyverse", "haven", "lubridate",
     "devtools", "pROC")
 
-packages <- rownames(installed.packages())
-p_to_install <- p_needed[!(p_needed %in% packages)]
+sapply(pkg, library, character.only = T)
 
-if (length(p_to_install) > 0) {
-  install.packages(p_to_install)
-}
 
-lapply(p_needed, require, character.only = TRUE)
-
+# load functions
 functions <- str_subset(list.files("./functions/"), ".R")
 
-for (i in seq_along(functions)){
-source(str_c("./functions/", functions[i]))
-}
-
-source("./functions/RISQ-R-indicators-v21.R")
-
-knitr::opts_chunk$set(echo = F)
-```
-
-# Descriptive statistics for independent variables
+list.files("./functions/",
+           pattern = "\\.R$",
+           full.names = T) %>% 
+  map(source)
 
 
-```{r }
 
 
+# Descriptive statistics for independent variables ------------------------
+
+# load data
 load("./data/clean_us_v1.RData")
 
 usw_small <- usw %>% 
@@ -78,20 +70,20 @@ outcomes <- str_c(phase, "_", waves)
 models_p1 <- list(NULL)
 
 for (i in seq_along(outcomes)) {
-
+  
   print(outcomes[i])
   
-response_model <- formula(str_c(outcomes[i], " ~ ",
-                                str_c(vars, collapse = " + ")))
-
-data <- usw_small %>%
-  dplyr::select(vars, outcomes[i]) %>%
-  na.omit()
-
-models_p1[[i]] <- glm(response_model, data = data,
-                family = "binomial")
-
-names(models_p1)[i] <- outcomes[i]
+  response_model <- formula(str_c(outcomes[i], " ~ ",
+                                  str_c(vars, collapse = " + ")))
+  
+  data <- usw_small %>%
+    dplyr::select(vars, outcomes[i]) %>%
+    na.omit()
+  
+  models_p1[[i]] <- glm(response_model, data = data,
+                        family = "binomial")
+  
+  names(models_p1)[i] <- outcomes[i]
 }
 
 
@@ -108,28 +100,28 @@ usw_small %>%
 models_p3 <- list(NULL)
 
 for (i in seq_along(outcomes)) {
-
+  
   print(outcomes[i])
   
-   vars2 <- c(vars, 
+  vars2 <- c(vars, 
              str_c(c("status_p1_", "days_int_"), waves[i]))
   
-response_model <- formula(str_c(outcomes[i], " ~ ",
-                                str_c(vars2, collapse = " + ")))
-
-data <- usw_small %>%
-  dplyr::select(vars2, outcomes[i]) %>%
-  na.omit()
-
-models_p3[[i]] <- glm(response_model, data = data,
-                family = "binomial")
-
-names(models_p3)[i] <- outcomes[i]
+  response_model <- formula(str_c(outcomes[i], " ~ ",
+                                  str_c(vars2, collapse = " + ")))
+  
+  data <- usw_small %>%
+    dplyr::select(vars2, outcomes[i]) %>%
+    na.omit()
+  
+  models_p3[[i]] <- glm(response_model, data = data,
+                        family = "binomial")
+  
+  names(models_p3)[i] <- outcomes[i]
 }
 
-```
 
-```{r}
+
+
 list_res <- c(models_p1, models_p3)
 
 results <- map(list_res, broom::glance) %>%
@@ -154,18 +146,18 @@ results %>%
   geom_point() + geom_line() +
   theme_bw() +
   labs(title = "R2 for models for two outcomes by wave")
-  
+
 ggsave("./results/reg_r2.png", dpi = 500)
 
-```
 
 
 
-```{r}
+
+
 easy_roc <- function(object) {
   x <- ModelGood::Roc(object,
-  formula = object$formula,
-  data = object$data)
+                      formula = object$formula,
+                      data = object$data)
   
   unlist(x$Auc)
 }
@@ -181,26 +173,27 @@ results %>%
 
 ggsave("./results/reg_auc.png", dpi = 500)
 
-```
 
 
-```{r}
+
+
 # missing vars
-wide_us$countryofbirth_fct_3 <- wide_us$countryofbirth_fct
-wide_us$countryofbirth_fct_4 <- wide_us$countryofbirth_fct
-wide_us$countryofbirth_fct_5 <- wide_us$countryofbirth_fct
-wide_us$countryofbirth_fct_6 <- wide_us$countryofbirth_fct
-
-
-
-# give same lables
-labs <- levels(usw$education_fct)
-
-
-levels(wide_us$education_fct_2)
 wide_us <- wide_us %>% 
-  mutate_at(vars(matches("education_fct_")),
-            funs(factor(., labels = labs)))
+  mutate(countryofbirth_fct_3 = countryofbirth_fct,
+         countryofbirth_fct_4 = countryofbirth_fct,
+         countryofbirth_fct_5 = countryofbirth_fct,
+         countryofbirth_fct_6 = countryofbirth_fct)
+
+
+# give same lables to education
+wide_us <- wide_us %>% 
+  mutate(education_fct_1 = fct_recode(education_fct_1,
+                                      "Missing" = "refused",
+                                      "Missing" = "Don't know",
+                                      "Other higher degree" = "Other higher",
+                                      "Other qualification" = "Other qual",
+                                      "No qualification" = "No qual"))
+
 
 
 # add process variables
@@ -213,22 +206,22 @@ wide_us <- usw %>%
 new_data <- list(NULL)
 
 for (i in 3:6) {
-
+  
   sel_vars <- str_c(
-  c(vars[1:13], "status_p1", "days_int"), 
+    c(vars[1:13], "status_p1", "days_int"), 
     "_",i)
-
-data <- wide_us %>% 
-  select(sel_vars, pidp) %>% 
-  rename_all(funs(str_remove(., "_[0-9]$"))) %>% 
-  rename_at(vars(matches("status_p1|days_int")),
-            funs(str_c(., "_", i - 1)))
-
-p1 <- predict.glm(list_res[[i - 2]], data, type = "response")
-p3 <- predict.glm(list_res[[i + 3]], data, type = "response")
-
-new_data[[i - 2]] <- cbind(data, p1, p3)
-
+  
+  data <- wide_us %>% 
+    select(sel_vars, pidp) %>% 
+    rename_all(funs(str_remove(., "_[0-9]$"))) %>% 
+    rename_at(vars(matches("status_p1|days_int")),
+              funs(str_c(., "_", i - 1)))
+  
+  p1 <- predict.glm(list_res[[i - 2]], data, type = "response")
+  p3 <- predict.glm(list_res[[i + 3]], data, type = "response")
+  
+  new_data[[i - 2]] <- cbind(data, p1, p3)
+  
 }
 
 i <- 3
@@ -253,20 +246,20 @@ new_data2 <- new_data2 %>%
 new_data2 <- as.data.frame(new_data2)
 
 new_data3 <- reshape(data = new_data2,
-        idvar = "pidp",
-        varying = 2:9,
-        timevar = "wave",
-        sep = "_",
-        direction = "long") %>% 
+                     idvar = "pidp",
+                     varying = 2:9,
+                     timevar = "wave",
+                     sep = "_",
+                     direction = "long") %>% 
   tbl_df()
 
-  
+
 
 quant <- new_data3 %>% 
   dplyr::group_by(wave) %>% 
   dplyr::summarise(p1_75 = quantile(p1, na.rm = T)[4],
-            p3_75 = quantile(p3, na.rm = T)[2],
-            cor =  round(cor(p1, p3, use = "pairwise.complete.obs"), 2))
+                   p3_75 = quantile(p3, na.rm = T)[2],
+                   cor =  round(cor(p1, p3, use = "pairwise.complete.obs"), 2))
 
 
 new_data4 <- new_data3 %>% 
@@ -276,14 +269,14 @@ new_data4 <- new_data3 %>%
          sum_p = p1 + (1 - p3)) %>% 
   dplyr::group_by(wave) %>% 
   dplyr::mutate(sum_out = ifelse(sum_p < quantile(sum_p, na.rm = T)[4],
-                          "Yes", "No"))
+                                 "Yes", "No"))
 
 
 new_data4 %>% 
   ungroup() %>% 
   group_by(wave2) %>%
   dplyr::count(sum_out)
-  
+
 new_data4 %>% 
   select(p3, p1, sum_out, wave2, 
          cor, p1_75, p3_75) %>% 
@@ -300,18 +293,18 @@ new_data4 %>%
   theme_bw() +
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   geom_text(aes(label = paste("r=", cor, sep = "")), 
-              x = 0.1, y = 0.15) 
+            x = 0.1, y = 0.15) 
 
 ggsave("./results/prob_plots.png", dpi = 500)
 
 
 
 
-```
 
 
-```{r}
-# calcualte response rates for different scenarios
+
+
+# calcualte response rates for different scenarios ------------------------
 
 # get outcome variables in long format
 
@@ -322,11 +315,11 @@ data_out <- usw %>%
 data_out <- as.data.frame(data_out)
 
 data_outl <- reshape(data = data_out,
-        idvar = "pidp",
-        varying = 2:11,
-        timevar = "wave",
-        sep = "_",
-        direction = "long") %>% 
+                     idvar = "pidp",
+                     varying = 2:11,
+                     timevar = "wave",
+                     sep = "_",
+                     direction = "long") %>% 
   tbl_df()
 
 new_data5 <- new_data4 %>% 
@@ -334,16 +327,16 @@ new_data5 <- new_data4 %>%
          sel_p3 = ifelse(p3 > p3_75, 1, 0),
          sel_sum = ifelse(sum_out == "Yes", 1, 0)) %>% 
   dplyr::select(pidp, wave, sel_p1, sel_p3, sel_sum)
-  
+
 out_data <- data_outl %>% 
   filter(wave > 2) %>% 
-left_join(new_data5, by = c("pidp", "wave"))
+  left_join(new_data5, by = c("pidp", "wave"))
 
 out_data <- out_data %>% 
   mutate(out.sp1 = case_when(sel_p1 == 1 & out == 1 ~ 1,
-                              TRUE ~ out.p1),
+                             TRUE ~ out.p1),
          out.sp3 = case_when(sel_p3 == 1 & out == 1 ~ 1,
-                              TRUE ~ out.p1),
+                             TRUE ~ out.p1),
          out.sp13 = case_when(sel_sum == 1 & out == 1 ~ 1,
                               TRUE ~ out.p1))
 
@@ -369,7 +362,7 @@ rr <- rr %>%
                                "Phase 3 top 75%" = "prop_out_sp3",
                                "Phase 1+3 propensity" = "prop_out_sp13")) 
 
-  rr %>% 
+rr %>% 
   ggplot(aes(wave, value, color = outcome2)) + 
   geom_point() + geom_line(aes(group = outcome)) +
   theme_bw() +
@@ -382,10 +375,13 @@ ggsave("./results/rr_selection_plots.png", dpi = 500)
 
 
 
-```
 
-```{r}
-# Export data
+
+
+
+# Export data -------------------------------------------------------------
+
+
 
 
 new_out_data <- out_data %>% 
@@ -394,15 +390,15 @@ new_out_data <- out_data %>%
 new_out_data <- as.data.frame(new_out_data)
 
 out_wide <- reshape(data = new_out_data,
-        idvar = "pidp",
-        timevar = "wave",
-        sep = "_",
-        direction = "wide") %>% 
+                    idvar = "pidp",
+                    timevar = "wave",
+                    sep = "_",
+                    direction = "wide") %>% 
   tbl_df()
 
 usw <- left_join(usw, out_wide)
 
 save(usw, file = "./data/usw3.RData")
 
-```
+
 

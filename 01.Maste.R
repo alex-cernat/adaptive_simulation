@@ -25,11 +25,12 @@
 
 # 00 Admin ----------------------------------------------------------------
 
-
+# clean memory
 rm(list = ls())
 gc()
 
-if(Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
+# use local packages on work machine
+if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
   paste0(
     "C:/Users/",
     Sys.getenv("USERNAME"),
@@ -38,26 +39,22 @@ if(Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
   .libPaths()
 ))}
 
-# install packages from CRAN
-p_needed <-
-  c("tidyverse", "haven", "lubridate")
 
-packages <- rownames(installed.packages())
-p_to_install <- p_needed[!(p_needed %in% packages)]
+# load packages
+pkg <- c("tidyverse", "haven", "lubridate")
 
-if (length(p_to_install) > 0) {
-  install.packages(p_to_install)
-}
+sapply(pkg, library, character.only = T)
 
-lapply(p_needed, require, character.only = TRUE)
 
+# load functions
 functions <- list.files("./functions/", pattern = ".R")
 map(str_c("./functions/", functions), source)
 
 
-# 01 Import data ----------------------------------------------------------
+# 01 Make phase variable ----------------------------------------------------
 
 
+# get wave 1 data and cross wave information
 us1r_full <- read_dta("./data/stata/us_w1/a_indresp.dta")
 us1h_full <- read_dta("./data/stata/us_w1/a_hhresp.dta")
 usxw_full <- read_dta("./data/stata/us_wx/xwavedat.dta")
@@ -159,9 +156,11 @@ phase_data <- phase_data %>%
 
 # 02. Select cases of interest --------------------------------------------
 
+# select baseline respondents from the general sample of GB
+
 us1_select <- us1r_full %>% 
-  filter(a_hhorig == 1) %>% 
-  filter(a_ivfio == 1) %>% 
+  filter(a_hhorig == 1) %>% # GB general sample
+  filter(a_ivfio == 1) %>% # full interview
   dplyr::select(pidp)
 
 
@@ -179,8 +178,8 @@ vars <- c("ivfio", "issued2w")
 
 data <- data %>% 
   rename_all(funs(str_remove(., str_c(letters[i], "_")))) %>%
-  filter(issued2w == 1) %>% 
-  filter(memorig %in% 1:2) %>% 
+  filter(issued2w == 1) %>% # issues to the wave
+  filter(memorig %in% 1:2) %>% # check this (here we choose NI as well)
   mutate(out = ifelse(ivfio == 1, 1, 0)) %>% 
   dplyr::select(pidp, out, ivfio) %>% 
   right_join(us1_select, by = "pidp") 
@@ -194,12 +193,12 @@ names(out_list)[i] <- str_c("us", i)
 # exclude dead people
 
 for (i in 2:7){
-  test <- usxw_full %>%
+  dead_data <- usxw_full %>%
     filter(usxw_full$dcsedw_dv %in% 1:i) %>% 
     dplyr::select(pidp)
   
   out_list[[i]] <- out_list[[i]] %>%
-    anti_join(test, by = "pidp") 
+    anti_join(dead_data, by = "pidp") 
 }
 
 # larger proporitons of participation because the mean does not
@@ -236,7 +235,7 @@ us1 <- us1r_full %>%
   left_join(usxw, by = "pidp")
 
 
-
+######################## !!!
 # remove proxy?
 
 us1 <- us1 %>% filter(ivfio == 1)
@@ -289,12 +288,16 @@ us1 <- us1 %>%
                                 sf3a > 2 ~ 0),
          benefit_prop = fihhmnsben/fihhmnnet1,
          benefit = as.factor(ifelse(benefit_prop > .6, "Yes", "No")),
+         benefit = ifelse(is.na(benefit), "No", benefit),
          ineducation = as.factor(ifelse(fenow == 3, "Yes", "No")),
-         health_sum = as.factor(long_cond + work_limit)) %>% 
-  dplyr::select(pidp, agecat:health_sum, hiqual)
+         health_sum = as.factor(long_cond + work_limit),
+         education_fct = relabel(hiqual)
+         ) %>% 
+  dplyr::select(pidp, agecat:education_fct, hiqual)
 
-us1$benefit[is.na(us1$benefit)] <- "No"
-us1$education_fct <- relabel(us1$hiqual)
+
+
+# Do outcome variables ----------------------------------------------------
 
 
 
@@ -306,9 +309,9 @@ usw <- us1
 usxwid <- usxwid_full %>% 
   dplyr::select(matches("ivf|pidp|month|hidp|pno"))
 
-usw <- usw %>% 
-  left_join(usxwid, by = "pidp") 
+usw <- left_join(usw, usxwid, by = "pidp") 
 
+# function to code missing: 1 = int, 3 = not issued, 0 = rest
 us_out_code <- function(x){
   case_when(x == 1 ~ 1,
             x == -9 ~ 3,
@@ -316,7 +319,8 @@ us_out_code <- function(x){
 }
 
 
-let_to_nr <- function(x) {
+# function to rename output variables
+left_to_nr <- function(x) {
   temp <- str_replace(x,
                       "^([a-z])_out$",
                       "out_\\1")
@@ -325,20 +329,21 @@ let_to_nr <- function(x) {
               str_c("out_", temp_nr))
 }
 
+
+# make new outcome variables
 usw <- usw %>% 
   mutate_at(vars(matches("\\_ivfio$")),
             funs(out = us_out_code(.))) %>% 
   rename_all(funs(str_replace_all(., "ivfio_out",
                              "out"))) %>% 
   rename_at(vars(matches("[a-z]_out$")),
-            funs(let_to_nr(.)))
-    
-usw <- usw %>% 
-  left_join(phase_data, by = "pidp")
+            funs(left_to_nr(.)))
 
-rm(phase_data)
+# bring together with usw data    
+usw <- left_join(usw, phase_data, by = "pidp")
 
-## make missing patterns
+
+## make missing patterns and save as excel
 
 participation_patterns <- usw %>% 
   count(out_2, out_3, out_4, out_5, out_6) %>% 
@@ -350,25 +355,26 @@ write_excel_csv(participation_patterns, path = "./results/us_resp.csv")
 
 
 
-## make variable that say how many times they participated before
-## and 
+## make variable that says how many times they participated before
 
+
+# recode the ineligebles to 0 for this
 small_data <- usw %>% 
-  dplyr::select_('starts_with("out")') %>% 
+  dplyr::select(starts_with("out")) %>% 
   mutate_all(funs(ifelse(. == 3, 0, .)))
+
 
 out_res <- list(NULL)
 
-small_data
 
-for(i in 3:8){
+for (i in 3:8) {
   res <- cbind(rowSums(small_data[, 1:(i - 2)], na.rm = T),
                     rowSums(is.na(small_data[, 1:(i - 2)])))
   
-  res <- tbl_df(res)
-  
   colnames(res) <- c(str_c("part_", i),
                      str_c("noissue_", i))
+  
+  res <- tbl_df(res)
   
   out_res[[i]] <- res
 }
@@ -405,7 +411,7 @@ save(usw, file = "./data/usw.RData")
 
 rm(out_list, out_res, data, 
    participation_patterns, res,
-   temp_data, test, small_data, 
+   temp_data, small_data, 
    us1, us1_select, us1h_full,
    us1r_full, us1h, usxw_full,
    usxwid_full)
@@ -516,7 +522,7 @@ load("./data/usw.RData")
 
 call_rec_data3 <- list(NULL)
 files <- str_c("./data/", list.files("./data/", pattern = "call_rec_"))
-for(i in seq_along(files)){
+for (i in seq_along(files)) {
   load(files[i])
   call_rec_data3[[i]] <- data
   
@@ -534,8 +540,6 @@ map(call_rec_data3, function(x) {
   data <<- left_join(data, x)
 })
 
-
-attributes(data$status_p1_2)
 labs <- c("no reply", "contact made",
           "appointment made", "any interviewing done",
           "any other status" )
@@ -586,7 +590,7 @@ usw <- usw %>%
   ) 
 
 
-count(usw, out_p3_3, out_3, int_phase_3)
+count(usw, int_phase_3, out_p1_3, out_p3_3, out_3)
 
 
 save(usw, file = "./data/usw2.RData")
@@ -720,30 +724,6 @@ wide_us <- usw %>%
 
 save(usw, wide_us, 
      file = "./data/clean_us_v1.RData")
-
-
-
-miss_hidp <- usw %>% 
-  filter(int_phase_2 > 1) %>% 
-  filter(is.na(status_p1_2)) %>% 
-  select(b_hidp)
-
-miss_call <- call_rec_data[[2]] %>% 
-  semi_join(miss_hidp)
-
-
-miss_call %>% 
-  group_by(b_hidp) %>% 
-  arrange(b_hidp, contact_day_2) %>% 
-  mutate(miss = mean(is.na(status_2))) %>% 
-  filter(miss < 1) %>% 
-  View()
-
-usw$days_int_2
-# 06. Make fieldwork variables --------------------------------------------
-
-
-
 
 
 
