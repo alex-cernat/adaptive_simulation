@@ -1,7 +1,7 @@
 ###
 #
 # Adaptive survye design in longitudinal studies
-#       with Nicole Watson and Mark O'Shea
+#       with Nicole Watson 
 #
 ###
 
@@ -41,7 +41,7 @@ if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
 
 
 # load packages
-pkg <- c("tidyverse", "haven", "lubridate")
+pkg <- c("tidyverse", "haven", "lubridate", "purrr")
 
 sapply(pkg, library, character.only = T)
 
@@ -54,21 +54,26 @@ map(str_c("./functions/", functions), source)
 # 01 Make phase variable ----------------------------------------------------
 
 
+
 # get wave 1 data and cross wave information
 us1r_full <- read_dta("./data/stata/us_w1/a_indresp.dta")
 us1h_full <- read_dta("./data/stata/us_w1/a_hhresp.dta")
 usxw_full <- read_dta("./data/stata/us_wx/xwavedat.dta")
 usxwid_full <- read_dta("./data/stata/us_wx/xwaveid.dta")
 
+
+# set up phase list
 phase_data <- list(NULL)
 
+# vars of interest
 vars <- c("intdatd_dv", "intdatm_dv", "intdaty_dv",
           "month", "ivfio", "hidp")
 
-
+# there are different phases for different waves
 phase1 <- c(0, 6, 6, 6, 12, 10)
 phase2 <- c(0, 6, 6, 6, 4, 6)
 phase3 <- c(0, 4, 4, 9, 3, 4)
+
 
 for (i in 2:6) {
   
@@ -76,6 +81,7 @@ for (i in 2:6) {
   temp_data <- read_dta(str_c("./data/stata/us_w", i, "/",
                               letters[i], "_indall.dta"))
 
+  # clean data
   temp_data <- temp_data %>%
     dplyr::select(pidp, str_c(letters[i], "_", vars)) %>% 
     rename_all(funs(str_remove(., str_c(letters[i], '_')) %>%
@@ -88,8 +94,8 @@ for (i in 2:6) {
            month = relabel(month)) %>% 
     dplyr::select(-intdatd, -intdatm, -intdaty)
   
-  # make phase variables
   
+  # make phase variables
   temp_data <- temp_data %>%
     filter(ivfio == 1) %>% 
     group_by(month) %>% 
@@ -106,25 +112,31 @@ for (i in 2:6) {
     rename_all(funs(str_replace(., ".+", str_c(., "_", i)) %>% 
                       str_replace_all(., 'pidp_.', 'pidp')))
   
+  # put in list
   phase_data[[i]] <- temp_data
     
 }
 
+# move from list to data frame
 phase_data <- reduce(phase_data[2:6], full_join)
+
 
 # take into account that year 2 of wave 4 had a different data collection
 # period
 
 phase_data[as.numeric(phase_data$month_4) %in% 13:24,
            c("phase_j1end_4", "phase_j2end_4", "phase_j3end_4")] <-
-phase_data %>% 
-  filter(as.numeric(month_4) %in% 13:24) %>% 
-  group_by(month_4) %>% 
-  mutate(phase_j1end_4 = min(intdate_4, na.rm = T) + weeks(phase1[5]),
-         phase_j2end_4 = phase_j1end_4 + weeks(phase2[5]),
-         phase_j3end_4 = phase_j2end_4 + weeks(phase3[5])) %>% 
-  ungroup() %>% 
+  phase_data %>%
+  filter(as.numeric(month_4) %in% 13:24) %>%
+  group_by(month_4) %>%
+  mutate(
+    phase_j1end_4 = min(intdate_4, na.rm = T) + weeks(phase1[5]),
+    phase_j2end_4 = phase_j1end_4 + weeks(phase2[5]),
+    phase_j3end_4 = phase_j2end_4 + weeks(phase3[5])
+  ) %>%
+  ungroup() %>%
   dplyr::select(phase_j1end_4, phase_j2end_4, phase_j3end_4)
+
 
 # make individual phase variable
 
@@ -168,37 +180,41 @@ us1_select <- us1r_full %>%
 
 # 03. Make interview outcome variables ------------------------------------
 
+# make empty list
 out_list <- list(NULL)
 
+
 for (i in 2:7) {
-data <- read_dta(str_c("./data/stata/us_w", i, "/", letters[i], 
-                       "_indsamp.dta"))
-
-vars <- c("ivfio", "issued2w")
-
-data <- data %>% 
-  rename_all(funs(str_remove(., str_c(letters[i], "_")))) %>%
-  filter(issued2w == 1) %>% # issues to the wave
-  filter(memorig %in% 1:2) %>% # check this (here we choose NI as well)
-  mutate(out = ifelse(ivfio == 1, 1, 0)) %>% 
-  dplyr::select(pidp, out, ivfio) %>% 
-  right_join(us1_select, by = "pidp") 
-
-out_list[[i]] <- data
-names(out_list)[i] <- str_c("us", i)
+  
+  # get the data
+  data <- read_dta(str_c("./data/stata/us_w", i, "/", letters[i],
+                         "_indsamp.dta"))
+  
+  # files of interest
+  vars <- c("ivfio", "issued2w")
+  
+  # rename, filter, create varible and join
+  data <- data %>%
+    rename_all(funs(str_remove(., str_c(letters[i], "_")))) %>%
+    filter(issued2w == 1) %>% # issues to the wave
+    filter(memorig %in% 1:2) %>% # check this (here we choose NI as well)
+    mutate(out = ifelse(ivfio == 1, 1, 0)) %>%
+    dplyr::select(pidp, out, ivfio) %>%
+    right_join(us1_select, by = "pidp")
+  
+  # put in list
+  out_list[[i]] <- data
+  names(out_list)[i] <- str_c("us", i)
 }
 
-
-
 # exclude dead people
-
-for (i in 2:7){
+for (i in 2:7) {
   dead_data <- usxw_full %>%
-    filter(usxw_full$dcsedw_dv %in% 1:i) %>% 
+    filter(usxw_full$dcsedw_dv %in% 1:i) %>%
     dplyr::select(pidp)
   
   out_list[[i]] <- out_list[[i]] %>%
-    anti_join(dead_data, by = "pidp") 
+    anti_join(dead_data, by = "pidp")
 }
 
 # larger proporitons of participation because the mean does not
@@ -208,12 +224,11 @@ sapply(out_list, summary)
 
 # 04. Make variables of interest ------------------------------------------
 
-
-
+# select variables of interest from cross file
 usxw <- usxw_full %>% 
-  dplyr::select(pidp, ukborn, plbornc,)
+  dplyr::select(pidp, ukborn, plbornc)
 
-
+# select variables of interest
 varsi <- c("hidp", "dvage", "jbhrs", "jbstat",
            "gor_dv", "sex", "mastat_dv",
            "hhtype_dv", "nchild_dv", "hiqual_dv",
@@ -224,9 +239,11 @@ varsi <- c("hidp", "dvage", "jbhrs", "jbstat",
 varsh <- c("hidp", "hhsize", "hsownd", "numadult",
            "fihhmnsben_dv", "fihhmnnet1_dv")
 
+# get household data
 us1h <- us1h_full %>% 
   dplyr::select(str_c("a_", varsh))
 
+# get individual data and join with household and crosswave
 us1 <- us1r_full %>% 
   dplyr::select(pidp, str_c("a_", varsi)) %>% 
   left_join(us1h, by = "a_hidp") %>% 
@@ -235,14 +252,11 @@ us1 <- us1r_full %>%
   left_join(usxw, by = "pidp")
 
 
-######################## !!!
-# remove proxy?
-
+# remove proxy
 us1 <- us1 %>% filter(ivfio == 1)
 
 
 # recode variables
-
 us1 <- us1 %>% 
   mutate(agecat = cut(dvage, c(15, 19, 24, 34,
                                44, 54, 64, 74,
@@ -288,17 +302,21 @@ us1 <- us1 %>%
                                 sf3a > 2 ~ 0),
          benefit_prop = fihhmnsben/fihhmnnet1,
          benefit = as.factor(ifelse(benefit_prop > .6, "Yes", "No")),
-         benefit = ifelse(is.na(benefit), "No", benefit),
          ineducation = as.factor(ifelse(fenow == 3, "Yes", "No")),
          health_sum = as.factor(long_cond + work_limit),
-         education_fct = relabel(hiqual)
-         ) %>% 
+         urb = case_when(urban == 1 & gor == 7 ~ "London",
+                         urban == 1 & gor != 7 ~ "Other urban",
+                         urban == 2 ~ "Rural"),
+         urb = as.factor(urb),
+         education_fct = relabel(hiqual),
+         education_fct = fct_recode(education_fct,
+                                           NULL = "Missing",
+                                           NULL = "refused",
+                                           NULL = "Don't know")) %>% 
   dplyr::select(pidp, agecat:education_fct, hiqual)
 
 
-
 # Do outcome variables ----------------------------------------------------
-
 
 
 ### add outcome variables
@@ -309,9 +327,10 @@ usw <- us1
 usxwid <- usxwid_full %>% 
   dplyr::select(matches("ivf|pidp|month|hidp|pno"))
 
+# bring cross wave and wave 1 together
 usw <- left_join(usw, usxwid, by = "pidp") 
 
-# function to code missing: 1 = int, 3 = not issued, 0 = rest
+# function to code missing: 1 = int, 3 = not issued, 0 = non-resp
 us_out_code <- function(x){
   case_when(x == 1 ~ 1,
             x == -9 ~ 3,
@@ -358,12 +377,13 @@ write_excel_csv(participation_patterns, path = "./results/us_resp.csv")
 ## make variable that says how many times they participated before
 
 
-# recode the ineligebles to 0 for this
+# recode the unissued to 0 for this
 small_data <- usw %>% 
   dplyr::select(starts_with("out")) %>% 
   mutate_all(funs(ifelse(. == 3, 0, .)))
 
-
+ 
+# make empty list for loop
 out_res <- list(NULL)
 
 
@@ -379,11 +399,9 @@ for (i in 3:8) {
   out_res[[i]] <- res
 }
 
-
+# bring together
 usw <- tbl_df(cbind(usw, reduce(out_res[3:8], cbind)))
       
-
-summary(usw)
 
 ggplot(usw, aes(part_8 + 1)) +
   geom_histogram() +
@@ -421,116 +439,20 @@ gc()
 
 load("./data/usw.RData")
 
-### function to get contact history we want from wave
-
-# 
-# folders <- list.files("./data/stata/", pattern = "_w[0-6]")
-# 
-# call_rec_data <- NULL
-# call_rec_data <- map(
-#   str_c("./data/stata/", folders, "/"),
-#     get_callrec_us)
-# 
-# # get month sample info
-# 
-# index <- 2
-# call_rec_data2 <- map(call_rec_data[2:6], function(x) {
-# month_data <- usw %>%
-#   select(str_c(letters[index], "_hidp"),
-#          str_c("month_", index))
-# 
-# data <- month_data %>%
-#     left_join(x)
-# 
-# index <<- index + 1
-# 
-# data
-# 
-# }
-# )
-
-# 
-# 
-# 
-# # get call records indicators
-# 
-# rm(call_rec_data)
-# gc()
-# 
-# #x <- call_rec_data2[[2]]
-# 
-# 
-# index <- 5
-# x <- call_rec_data2[[5]]
-# 
-# map(call_rec_data2[3:5], function(x) {
-#   
-#  step1 <- usw %>% 
-#   dplyr::select(str_c(letters[index], "_hidp"),
-#          str_c(c("int_phase_", "out_", "phase_j1end_"), 
-#                index)) %>% 
-#    group_by(f_hidp) %>% 
-#    filter(row_number() == 1)
-#   
-#  
-#  step2 <- semi_join(x, step1) %>% 
-#    select(matches("hidp|month|status|contact"))
-#  step3 <- left_join(step2, step1)
-#  
-#  data <- step3 %>% 
-#    rename_all(funs(str_remove_all(., "_[0-9]|^[a-z]_"))) %>% 
-#   group_by(month) %>% 
-#   mutate(ph1 = phase_j1end,
-#          ph1 = ifelse(is.na(ph1), 
-#                       mean(ph1, na.rm = T), ph1),
-#          ph1 = as_date(ph1)) %>%
-#   filter(contact_day < mean(phase_j1end, na.rm = T)) %>% 
-#   dplyr::select(-phase_j1end) %>%
-#   filter(!is.na(status)) %>% 
-#   filter(contact_day > 0) %>%
-#     group_by(month, hidp) %>% 
-#   mutate(
-#     status_p1 = ifelse(
-#     max(contact_day, na.rm = T) == contact_day, 
-#     status, NA),
-#     status_p1 = max(status_p1, na.rm = T),
-#     status_p1 = ifelse(status_p1 == -Inf, NA, status_p1),
-#     days_int = min(contact_day, na.rm = T) %--% 
-#       max(contact_day, na.rm = T),
-#     days_int = dseconds(days_int) / ddays(1)) %>%
-#    ungroup() %>% 
-#     dplyr::select(matches("hidp"), ph1, 
-#                 status_p1, days_int) %>% 
-#    group_by(hidp) %>% 
-#    filter(row_number() == 1) %>% 
-#    ungroup() %>% 
-#    rename_all(funs(str_c(., "_", index) %>% 
-#                     str_replace(., "hidp_[0-9]", 
-#                                 str_c(letters[index],
-#                                       "_hidp"))))
-# 
-#  save(data, file = str_c("./data/call_rec_", index, ".RData"))   
-#  
-#  rm(data)
-#  gc()
-#  
-#  index <<- index + 1
-# }
-# )
+# syntax that gets call record
+# we need to run it only once and then saves outcomes
+# source("./get_call_rec.R")
 
 # brin in saved data
 
 call_rec_data3 <- list(NULL)
-files <- str_c("./data/", list.files("./data/", pattern = "call_rec_"))
+files <-
+  str_c("./data/", list.files("./data/", pattern = "call_rec_"))
 for (i in seq_along(files)) {
   load(files[i])
   call_rec_data3[[i]] <- data
   
 }
-
-
-
-
 
 
 # bring call reccord together with main data
@@ -540,6 +462,7 @@ map(call_rec_data3, function(x) {
   data <<- left_join(data, x)
 })
 
+# labels for outcomes
 labs <- c("no reply", "contact made",
           "appointment made", "any interviewing done",
           "any other status" )
@@ -558,10 +481,6 @@ table(usw$days_int_2, usw$out_2, useNA = "always")
 usw <- usw %>%
   mutate_at(vars(matches("out_[2-6]")),
             funs(ifelse(. == 3, 0, .)))
-
-
-
-
 
 
 # make new outcomes
@@ -589,16 +508,16 @@ usw <- usw %>%
                         out_6 == 1, NA, out_6)
   ) 
 
+# check to see if it looks reasonable
+count(usw, out_3, int_phase_3, out_p1_3, out_p3_3)
 
-count(usw, int_phase_3, out_p1_3, out_p3_3, out_3)
-
-
+# save data
 save(usw, file = "./data/usw2.RData")
+
 
 # 06. Get independent variables from each wave ----------------------------
 
-
-
+# variables of interest
 varsi <- c("pidp", "hidp", "dvage", "jbhrs", "jbstat",
            "gor_dv", "sex", "mastat_dv",
            "hhtype_dv", "nchild_dv", "hiqual_dv",
@@ -609,10 +528,17 @@ varsi <- c("pidp", "hidp", "dvage", "jbhrs", "jbstat",
 varsh <- c("hidp", "hhsize", "hsownd", 
            "fihhmnsben_dv", "fihhmnnet1_dv")
 
-folder <- "./data/stata/"
-folders <- str_c(folder, 
-        list.files(folder, pattern = "_w[1-6]"),
-         "/")
+
+folders <- list.files("./data/stata/",
+           pattern = "_w[1-6]",
+           full.names = T) %>% 
+  str_c("/")
+
+# old syntax, the above is shorter and should work...
+# folder <- "./data/stata/"
+# folders <- str_c(folder, 
+#         list.files(folder, pattern = "_w[1-6]"),
+#          "/")
 
 test <- map(folders, get_us_main_data, varsi, varsh)
 
@@ -672,28 +598,35 @@ test_clean <- map(test, function(x) {
                                     TRUE ~ "No")),
       ineducation = as.factor(ifelse(fenow == 3, "Yes", "No")),
       health_sum = as.factor(long_cond + work_limit),
-      education_fct = relabel(hiqual)
+      urb = case_when(urban == 1 & gor == 7 ~ "London",
+                      urban == 1 & gor != 7 ~ "Other urban",
+                      urban == 2 ~ "Rural"),
+      education_fct = relabel(hiqual),
+      education_fct = fct_recode(education_fct,
+                                 NULL = "Missing",
+                                 NULL = "refused",
+                                 NULL = "Don't know")
     ) %>%
-    dplyr::select(pidp, agecat:education_fct, hiqual) %>% 
+    dplyr::select(pidp, agecat:education_fct, hiqual, urban) %>% 
     rename_all(funs(str_c(., "_", index) %>% 
                       str_replace(., "pidp_[0-9]", "pidp")))
     
 })
 
-
+# bring together all the data
 wide_us <- reduce(test_clean, left_join, by = "pidp")
 
-
+# keep cases that responded in wave 1
 wide_us <- semi_join(wide_us, usw, by = "pidp")
 
 
 # get info from previous wave if info is missing
 
-
 vars <- unique(str_remove(colnames(wide_us), "_[0-9]"))[-1]
 
 i <- 1
 
+# what proportion of cases were replace in this way
 nice_data <- list(NULL)
 
 for (i in seq_along(vars)) {
@@ -713,16 +646,19 @@ for (i in seq_along(vars)) {
 }
 
 
-wide_us <- reduce(nice_data, full_join, by = "pidp")
+wide_us2 <- reduce(nice_data, full_join, by = "pidp")
 
-wide_us <- usw %>% 
+wide_us2 <- usw %>% 
   dplyr::select(pidp, countryofbirth_fct,
          matches("out|month|int_phase")) %>% 
-  left_join(wide_us, by = "pidp")
+  left_join(wide_us2, by = "pidp")
 
+table(wide_us$jobhrs_3,
+      wide_us2$jobhrs_3,
+      useNA = "always")
 
-
-save(usw, wide_us, 
+# save data
+save(usw, wide_us2, 
      file = "./data/clean_us_v1.RData")
 
 
