@@ -43,7 +43,8 @@ list.files("./functions/",
 # Descriptive statistics for independent variables ------------------------
 
 # load data
-load("./data/clean_us_v1.RData")
+load("./data/usw2.RData")
+
 
 # get vars of interest
 usw_small <- usw %>% 
@@ -56,34 +57,44 @@ usw_small <- usw %>%
                 -benefit_prop, -countryofbirth,
                 -long_cond, -work_limit)
 
-# change ineligibles not non-respondents
+
+# change not issued to non-respondents
+# check if this is correct
 usw_small <- usw_small %>%
   mutate_at(vars(matches("out_")),
             funs(ifelse(. == 3, 0, .)))
 
+# list the variables we want in our model
 vars <- c("adultsinhh", "agecat", "benefit", "childreninhh",
           "countryofbirth_fct", "education_fct", "employed_fct",
           "ineducation", "health_sum", "likelymove",
-          "owner", "relationship_fct", "female")
+          "owner", "relationship_fct", "female", "urb")
 
+map(vars, function(x) desc_tab(usw_small[x]))
+
+# make outcomes
 phase <- rep(c("out_p1"), 5)
 waves <- rep(c(2:6))
-
 outcomes <- str_c(phase, "_", waves)
 
+
+# loop to explain outcomes in phase 1 for wave 2-6
+# also save predicted probabilities
 models_p1 <- list(NULL)
 
 for (i in seq_along(outcomes)) {
   
   print(outcomes[i])
   
+  # regression model 
   response_model <- formula(str_c(outcomes[i], " ~ ",
                                   str_c(vars, collapse = " + ")))
-  
+  # delete item mising
   data <- usw_small %>%
     dplyr::select(vars, outcomes[i]) %>%
     na.omit()
   
+  # run logistic regressions for phase 1 outcomes
   models_p1[[i]] <- glm(response_model, data = data,
                         family = "binomial")
   
@@ -177,33 +188,33 @@ results %>%
 
 ggsave("./results/reg_auc.png", dpi = 500)
 
-
-
-
-
-# missing vars
-wide_us <- wide_us %>% 
-  mutate(countryofbirth_fct_3 = countryofbirth_fct,
-         countryofbirth_fct_4 = countryofbirth_fct,
-         countryofbirth_fct_5 = countryofbirth_fct,
-         countryofbirth_fct_6 = countryofbirth_fct)
-
-
-# give same lables to education
-wide_us <- wide_us %>% 
-  mutate(education_fct_1 = fct_recode(education_fct_1,
-                                      "Missing" = "refused",
-                                      "Missing" = "Don't know",
-                                      "Other higher degree" = "Other higher",
-                                      "Other qualification" = "Other qual",
-                                      "No qualification" = "No qual"))
-
-
-
-# add process variables
-wide_us <- usw %>% 
-  select(pidp, matches("status_p1_|days_int_")) %>% 
-  left_join(wide_us)
+# # 
+# # 
+# # 
+# # 
+# # # missing vars
+# # wide_us <- wide_us %>% 
+# #   mutate(countryofbirth_fct_3 = countryofbirth_fct,
+# #          countryofbirth_fct_4 = countryofbirth_fct,
+# #          countryofbirth_fct_5 = countryofbirth_fct,
+# #          countryofbirth_fct_6 = countryofbirth_fct)
+# # 
+# # 
+# # # give same lables to education
+# # wide_us <- wide_us %>% 
+# #   mutate(education_fct_1 = fct_recode(education_fct_1,
+# #                                       "Missing" = "refused",
+# #                                       "Missing" = "Don't know",
+# #                                       "Other higher degree" = "Other higher",
+# #                                       "Other qualification" = "Other qual",
+# #                                       "No qualification" = "No qual"))
+# 
+# 
+# 
+# # add process variables
+# wide_us <- usw %>% 
+#   select(pidp, matches("status_p1_|days_int_")) %>% 
+#   left_join(wide_us)
 
 
 
@@ -212,7 +223,7 @@ new_data <- list(NULL)
 for (i in 3:6) {
   
   sel_vars <- str_c(
-    c(vars[1:13], "status_p1", "days_int"), 
+    c(vars[1:14], "status_p1", "days_int"), 
     "_",i)
   
   data <- wide_us %>% 
@@ -401,6 +412,7 @@ out_wide <- reshape(data = new_out_data,
   tbl_df()
 
 usw <- left_join(usw, out_wide)
+
 
 save(usw, file = "./data/usw3.RData")
 
