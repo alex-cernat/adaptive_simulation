@@ -197,7 +197,7 @@ for (i in 2:7) {
   data <- data %>%
     rename_all(funs(str_remove(., str_c(letters[i], "_")))) %>%
     filter(issued2w == 1) %>% # issues to the wave
-    filter(memorig %in% 1:2) %>% # check this (here we choose NI as well)
+    filter(memorig == 1) %>% # from GB
     mutate(out = ifelse(ivfio == 1, 1, 0)) %>%
     dplyr::select(pidp, out, ivfio) %>%
     right_join(us1_select, by = "pidp")
@@ -511,155 +511,220 @@ usw <- usw %>%
 # check to see if it looks reasonable
 count(usw, out_3, int_phase_3, out_p1_3, out_p3_3)
 
+
+# check missing cases
+
+# list the variables we want in our model
+vars <- c("adultsinhh", "agecat", "benefit", "childreninhh",
+          "countryofbirth_fct", "education_fct", "employed_fct",
+          "ineducation", "health_sum", "likelymove",
+          "owner", "relationship_fct", "female", "urb")
+
+usw %>% 
+  select(vars) %>% 
+  summarise_all(~(sum(is.na(.), na.rm = T)/NROW(.)) * 100) %>% 
+  gather() %>%
+  arrange(desc(value))
+  
+
 # save data
 save(usw, file = "./data/usw2.RData")
 
-
-# 06. Get independent variables from each wave ----------------------------
-
-# variables of interest
-varsi <- c("pidp", "hidp", "dvage", "jbhrs", "jbstat",
-           "gor_dv", "sex", "mastat_dv",
-           "hhtype_dv", "nchild_dv", "hiqual_dv",
-           "urban_dv", "hhresp_dv", "sf1", "health",
-           "xpmove", "ivfio", "fibenothr_dv",
-           "sf3a", "fenow")
-
-varsh <- c("hidp", "hhsize", "hsownd", 
-           "fihhmnsben_dv", "fihhmnnet1_dv")
+# we don't use this info so not needed anymore
 
 
-folders <- list.files("./data/stata/",
-           pattern = "_w[1-6]",
-           full.names = T) %>% 
-  str_c("/")
-
-# old syntax, the above is shorter and should work...
-# folder <- "./data/stata/"
-# folders <- str_c(folder, 
-#         list.files(folder, pattern = "_w[1-6]"),
-#          "/")
-
-test <- map(folders, get_us_main_data, varsi, varsh)
-
-
-# clean data
-
-# have to import ukborn
-
-index <- 0
-
-test_clean <- map(test, function(x) {
-  
-  index <<- index + 1
-  
-  x %>%
-    mutate(
-      agecat = cut(dvage, c(15, 19, 24, 34,
-                            44, 54, 64, 74,
-                            105)),
-      employed = case_when(jbstat == 3 ~ 1,
-                           jbstat %in% c(1, 2) ~ 2,
-                           jbstat > 3 ~ 0),
-      employed_fct = factor(
-        employed,
-        labels = c("Not in labour force",
-                   "Unemployed",
-                   "Employed")
-      ),
-      jbhrs = ifelse(employed %in% c(0, 1), 0, jbhrs),
-      jobhrs = cut(jbhrs, c(-1, 0, 14, 29, 39, 49, 100)),
-      owner = as.factor(case_when(hsownd %in% 1:3 ~ "Yes",
-                                  hsownd > 3 ~ "No")),
-      relationship = case_when(mastat %in% 2:3 ~ 1,
-                               mastat == 10 ~ 2,
-                               mastat %in% 4:9 ~ 3,
-                               mastat == 1 ~ 4),
-      relationship_fct = factor(
-        relationship,
-        labels = c("Married",
-                   "De facto",
-                   "Separated",
-                   "Single")
-      ),
-      likelymove = as.factor(case_when(xpmove == 1 ~ "Yes",
-                                       xpmove == 2 ~ "No")),
-      female = as.factor(case_when(sex == 2 ~ "Yes",
-                                   sex == 1 ~ "No")),
-      numadult = hhsize - nchild,
-      childreninhh = cut(nchild, c(-1, 0, 1, 10)),
-      adultsinhh = cut(numadult, c(-1, 0, 1, 2, 11)),
-      long_cond = case_when(health == 1 ~ 1,
-                            health == 2 ~ 0),
-      work_limit = case_when(sf3a %in% c(1, 2) ~ 1,
-                             sf3a > 2 ~ 0),
-      benefit_prop = fihhmnsben / fihhmnnet1,
-      benefit = as.factor(case_when(benefit_prop > .6 ~ "Yes",
-                                    TRUE ~ "No")),
-      ineducation = as.factor(ifelse(fenow == 3, "Yes", "No")),
-      health_sum = as.factor(long_cond + work_limit),
-      urb = case_when(urban == 1 & gor == 7 ~ "London",
-                      urban == 1 & gor != 7 ~ "Other urban",
-                      urban == 2 ~ "Rural"),
-      education_fct = relabel(hiqual),
-      education_fct = fct_recode(education_fct,
-                                 NULL = "Missing",
-                                 NULL = "refused",
-                                 NULL = "Don't know")
-    ) %>%
-    dplyr::select(pidp, agecat:education_fct, hiqual, urban) %>% 
-    rename_all(funs(str_c(., "_", index) %>% 
-                      str_replace(., "pidp_[0-9]", "pidp")))
-    
-})
-
-# bring together all the data
-wide_us <- reduce(test_clean, left_join, by = "pidp")
-
-# keep cases that responded in wave 1
-wide_us <- semi_join(wide_us, usw, by = "pidp")
-
-
-# get info from previous wave if info is missing
-
-vars <- unique(str_remove(colnames(wide_us), "_[0-9]"))[-1]
-
-i <- 1
-
-# what proportion of cases were replace in this way
-nice_data <- list(NULL)
-
-for (i in seq_along(vars)) {
-  data <- wide_us %>%
-    dplyr::select("pidp", matches(str_c(vars[i], "_[0-9]$")))
-  
-  var_clean <- str_c(vars[i], "_", 1:6)
-  
-  for (z in 2:6) {
-    index <- is.na(data[var_clean[z]])
-    
-    data[index, var_clean[z]] <- data[index, var_clean[z - 1]]
-  }
-  
-  nice_data[[i]] <- data
-  
-}
-
-
-wide_us2 <- reduce(nice_data, full_join, by = "pidp")
-
-wide_us2 <- usw %>% 
-  dplyr::select(pidp, countryofbirth_fct,
-         matches("out|month|int_phase")) %>% 
-  left_join(wide_us2, by = "pidp")
-
-table(wide_us$jobhrs_3,
-      wide_us2$jobhrs_3,
-      useNA = "always")
-
-# save data
-save(usw, wide_us2, 
-     file = "./data/clean_us_v1.RData")
-
-
-
+# 
+# # 06. Get independent variables from each wave ----------------------------
+# 
+# # variables of interest
+# varsi <- c("pidp", "hidp", "dvage", "jbhrs", "jbstat",
+#            "gor_dv", "sex", "mastat_dv",
+#            "hhtype_dv", "nchild_dv", "hiqual_dv",
+#            "urban_dv", "hhresp_dv", "sf1", "health",
+#            "xpmove", "ivfio", "fibenothr_dv",
+#            "sf3a", "fenow")
+# 
+# varsh <- c("hidp", "hhsize", "hsownd", 
+#            "fihhmnsben_dv", "fihhmnnet1_dv")
+# 
+# 
+# folders <- list.files("./data/stata/",
+#            pattern = "_w[1-6]",
+#            full.names = T) %>% 
+#   str_c("/")
+# 
+# # old syntax, the above is shorter and should work...
+# # folder <- "./data/stata/"
+# # folders <- str_c(folder, 
+# #         list.files(folder, pattern = "_w[1-6]"),
+# #          "/")
+# 
+# test <- map(folders, get_us_main_data, varsi, varsh)
+# 
+# 
+# # clean data
+# 
+# # have to import ukborn
+# 
+# index <- 0
+# 
+# test_clean <- map(test, function(x) {
+#   
+#   index <<- index + 1
+#   
+#   x %>%
+#     mutate(
+#       agecat = cut(dvage, c(15, 19, 24, 34,
+#                             44, 54, 64, 74,
+#                             105)),
+#       employed = case_when(jbstat == 3 ~ 1,
+#                            jbstat %in% c(1, 2) ~ 2,
+#                            jbstat > 3 ~ 0),
+#       employed_fct = factor(
+#         employed,
+#         labels = c("Not in labour force",
+#                    "Unemployed",
+#                    "Employed")
+#       ),
+#       jbhrs = ifelse(employed %in% c(0, 1), 0, jbhrs),
+#       jobhrs = cut(jbhrs, c(-1, 0, 14, 29, 39, 49, 100)),
+#       owner = as.factor(case_when(hsownd %in% 1:3 ~ "Yes",
+#                                   hsownd > 3 ~ "No")),
+#       relationship = case_when(mastat %in% 2:3 ~ 1,
+#                                mastat == 10 ~ 2,
+#                                mastat %in% 4:9 ~ 3,
+#                                mastat == 1 ~ 4),
+#       relationship_fct = factor(
+#         relationship,
+#         labels = c("Married",
+#                    "De facto",
+#                    "Separated",
+#                    "Single")
+#       ),
+#       likelymove = as.factor(case_when(xpmove == 1 ~ "Yes",
+#                                        xpmove == 2 ~ "No")),
+#       female = as.factor(case_when(sex == 2 ~ "Yes",
+#                                    sex == 1 ~ "No")),
+#       numadult = hhsize - nchild,
+#       childreninhh = cut(nchild, c(-1, 0, 1, 10)),
+#       adultsinhh = cut(numadult, c(-1, 0, 1, 2, 11)),
+#       long_cond = case_when(health == 1 ~ 1,
+#                             health == 2 ~ 0),
+#       work_limit = case_when(sf3a %in% c(1, 2) ~ 1,
+#                              sf3a > 2 ~ 0),
+#       benefit_prop = fihhmnsben / fihhmnnet1,
+#       benefit = as.factor(case_when(benefit_prop > .6 ~ "Yes",
+#                                     TRUE ~ "No")),
+#       ineducation = as.factor(ifelse(fenow == 3, "Yes", "No")),
+#       health_sum = as.factor(long_cond + work_limit),
+#       urb = case_when(urban == 1 & gor == 7 ~ "London",
+#                       urban == 1 & gor != 7 ~ "Other urban",
+#                       urban == 2 ~ "Rural"),
+#       education_fct = relabel(hiqual),
+#       education_fct = fct_recode(education_fct,
+#                                  NULL = "Missing",
+#                                  NULL = "refused",
+#                                  NULL = "Don't know")
+#     ) %>%
+#     dplyr::select(pidp, agecat:education_fct, hiqual, urban) %>% 
+#     rename_all(funs(str_c(., "_", index) %>% 
+#                       str_replace(., "pidp_[0-9]", "pidp")))
+#     
+# })
+# 
+# # bring together all the data
+# wide_us <- reduce(test_clean, left_join, by = "pidp")
+# 
+# # keep cases that responded in wave 1
+# wide_us <- semi_join(wide_us, usw, by = "pidp")
+# 
+# 
+# # get info from previous wave if info is missing
+# 
+# vars <- unique(str_remove(colnames(wide_us), "_[0-9]"))[-1]
+# 
+# i <- 1
+# 
+# 
+# nice_data <- list(NULL)
+# 
+# for (i in seq_along(vars)) {
+#   data <- wide_us %>%
+#     dplyr::select("pidp", matches(str_c(vars[i], "_[0-9]$")))
+#   
+#   var_clean <- str_c(vars[i], "_", 1:6)
+#   
+#   for (z in 2:6) {
+#     
+#     # make index if they have missing & were in that wave
+#     index <- is.na(data[var_clean[z]]) & data$pidp %in% test_clean[[z]]$pidp
+#     
+#     # replace with previous wave data
+#     data[index, var_clean[z]] <- data[index, var_clean[z - 1]]
+#     
+#   }
+#   
+#   nice_data[[i]] <- data
+#   
+# }
+# 
+# 
+# wide_us2 <- reduce(nice_data, full_join, by = "pidp")
+# 
+# wide_us2 <- usw %>% 
+#   dplyr::select(pidp, countryofbirth_fct,
+#          matches("out|month|int_phase")) %>% 
+#   left_join(wide_us2, by = "pidp")
+# 
+# table(wide_us$jobhrs_3,
+#       wide_us2$jobhrs_3,
+#       useNA = "always")
+# 
+# 
+# ######### check missing percentages
+# 
+# miss1 <- wide_us %>% 
+#   summarise_all(~(sum(is.na(.), na.rm = T)/NROW(.)) * 100) %>% 
+#   gather() %>% 
+#   rename(prop_origin = value)
+# 
+# miss2 <- wide_us2 %>% 
+#   summarise_all(~(sum(is.na(.), na.rm = T)/NROW(.)) * 100) %>% 
+#   gather() %>% 
+#   rename(prop_impute = value)
+# 
+# miss <- left_join(miss1, miss2) %>% 
+#   mutate(diff_miss = prop_origin - prop_impute) %>% 
+#   arrange(desc(diff_miss))
+# 
+# # get the attrition rates for each wave and delete that from missing proportions
+# #
+# # 
+# 
+# for (i in 1:6) {
+#   usw$pidp %in% test_clean[[i]]$pidp
+# }
+# 
+# 
+# 
+# print(miss, n = 200)
+# 
+# write_csv(miss, "./results/miss_table.csv")
+# 
+# miss %>% 
+#   ggplot(aes(diff_miss)) + geom_histogram()
+# 
+# x <- wide_us["agecat_1"]
+# 
+# nrow(x)
+# sum(is.na(x))
+# get_prop_miss <- function(x) {
+#   
+# }
+# 
+# # save data
+# save(usw, wide_us2, 
+#      file = "./data/clean_us_v1.RData")
+# 
+# 
+# 
