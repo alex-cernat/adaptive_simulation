@@ -135,7 +135,7 @@ for (i in seq_along(outcomes)) {
 
 
 
-# bring models togethr and look at descriptives
+# bring models together and look at descriptives
 list_res <- c(models_p1, models_p3)
 
 model_fit <- map(list_res, broom::glance) %>%
@@ -181,14 +181,6 @@ model_fit %>%
 ggsave("./results/reg_r2.png", dpi = 500)
 
 
-# function to calculate AUC
-easy_roc <- function(object) {
-  x <- ModelGood::Roc(object,
-                      formula = object$formula,
-                      data = object$data)
-  
-  unlist(x$Auc)
-}
 
 # visualize AUC performence
 model_fit$auc <- unlist(map(c(models_p1, models_p3), easy_roc))
@@ -258,17 +250,7 @@ new_data2 <- new_data2 %>%
                rep(3:6, each = 2))))
 
 
-
-# function to move prefix to suffix
-move_lab <- function(x) {
-  index <-  str_extract(x, "^[a-z]")
-  prefix <- which(letters %in% {{ index}} )
-  
-  str_remove(x, str_c(index, "_")) %>% str_c("_", prefix) %>% unlist()
-}
-
-
-# being in variables for not being issued and effort in phsae 
+# being in variables for not being issued and effort in phase 
 
 new_data2 <- usw3 %>% 
   select(pidp, matches("not_issued"), matches("ph23"), matches("hidp")) %>% 
@@ -293,10 +275,6 @@ new_data3 <- reshape(data = new_data2,
                      sep = "_",
                      direction = "long") %>% 
   tbl_df()
-
-
-
-
 
 
 # Make simulation cases ---------------------------------------------------
@@ -466,41 +444,28 @@ write_csv(nr_calls_saved, "./results/call_save_ind.csv")
 
 
 
-# takes too long 
-# 
-# new_data5 %>%  
-#   filter(!is.na(sim3)) %>% 
-#   ggplot(aes(p3, p1, color = as.factor(sim3), shape = as.factor(sim4))) +
-#   geom_point(alpha = 0.25) +
-#   facet_wrap(~ wave)
-# 
-# 
-# ggsave("./results/prob_plots_sim3.png", dpi = 300)
-# 
-# 
-# new_data5 %>% 
-#   select(p3, p1, sim4, wave2, 
-#          cor, p1_75, p3_75, sim3) %>% 
-#   na.omit() %>% 
-#   ggplot(aes(p3, p1, shape = as.factor(sim3))) +
-#   geom_point(aes(color = sim4), alpha = 0.03) +
-#   geom_vline(aes(xintercept = p3_75), color = "black", alpha = 5) +
-#   geom_hline(aes(yintercept = p1_75), color = "black", alpha = 5) +
-#   facet_wrap(~ wave2) +
-#   labs(x = "Probability of answering in phase 3",
-#        y = "Probability of answering in phase 1",
-#        color = "Sum selection 75%",
-#        shape = "Step selection 75%",
-#        title = "Out of sample pred. of answer prop. and three selection methods") +
-#   theme_bw() +
-#   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-#   geom_text(aes(label = paste("r=", cor, sep = "")), 
-#             x = 0.1, y = 0.15) 
-# 
-# ggsave("./results/prob_plots.png", dpi = 500)
+# graph
+
+new_data5 %>%
+  filter(!is.na(sim3)) %>%
+  mutate(wave2 = str_c("Wave ", wave)) %>% 
+  ggplot(aes(p3, p1,
+             color = as.factor(sim4), alpha = as.factor(sim3))) +
+  geom_point() +
+  geom_hline(aes(yintercept = p1_75)) +
+  geom_vline(aes(xintercept = p3_75)) +
+  facet_wrap(~ wave2) +
+  theme_bw() +
+  labs(y = "P(R initial)",
+       x = "P(R followup | NR initial)",
+       color = "In Simulation 4",
+       alpha = "In Simulation 3")
 
 
+ ggsave("./results/prob_plots_sim3.png", dpi = 300)
 
+ 
+ 
 
 # Calculate simualtion groups at household level --------------------------
 
@@ -514,26 +479,24 @@ new_data5 <- new_data5 %>%
   arrange(wave, hidp, p1, p3)
 
 
-
-# get statistics for cut-offs
-quant_hh <- new_data5 %>% 
-  dplyr::group_by(wave) %>% 
-  dplyr::summarise(p1_75_hh = quantile(p1_hh, na.rm = T)[4],
-                   p3_75_hh = quantile(p3_hh, na.rm = T)[2],
-                   cor_hh =  round(cor(p1_hh, p3_hh, 
-                                    use = "pairwise.complete.obs"), 2))
-
-
+ 
 new_data6 <- new_data5 %>% 
   left_join(quant_hh) %>% 
   ungroup() %>% 
   mutate(sum_p_hh = p1_hh + (1 - p3_hh)) %>% 
-  group_by(wave) %>% 
-  mutate(sim1_hh = ifelse(p1_hh > p1_75, "No", "Yes"),
-         sim2_hh = ifelse(p3_hh < p3_75, "No", "Yes"),
-         sum_out_hh = ifelse(sum_p_hh < quantile(sum_p_hh)[4], "Yes", "No"),
-         sim4_hh = sum_out_hh) %>% 
-  ungroup()
+  group_by(wave) %>%
+  arrange(p1_hh) %>% 
+  mutate(prop = row_number()/max(row_number()),
+         sim1_hh = ifelse(prop > 0.75, "No", "Yes")) %>% 
+  arrange(p3_hh) %>% 
+  mutate(prop = row_number()/max(row_number()),
+         sim2_hh = ifelse(prop < 0.25, "No", "Yes")) %>% 
+  arrange(sum_p_hh) %>% 
+  mutate(prop = row_number()/max(row_number()),
+         sim3_hh = ifelse(prop < 0.75, "Yes", "No")) %>%
+  select(-prop) %>% 
+  ungroup() 
+  
 
 
 # simulation 3 for hh
@@ -623,8 +586,6 @@ new_data7 <- reduce(sim3_list_hh, rbind) %>%
 
 
 
-
-
 # how many cases do we have
 sim_vars_hh <- str_c("sim", 1:4, "_hh")
 
@@ -636,6 +597,33 @@ map(sim_vars_hh, function(x)
 
 
 # smaller proportion of sim1 not chosen. I think it's because equat values
+
+p1_75_hh <- new_data7 %>% 
+  group_by(wave) %>% 
+  filter(sim1_hh == "Yes") %>% 
+  summarise(p1_75_hh = max(p1_hh))
+
+p3_75_hh <- new_data7 %>% 
+  group_by(wave) %>% 
+  filter(sim2_hh == "Yes") %>% 
+  summarise(p3_75_hh = max(p3_hh))
+
+
+new_data7 %>%
+  mutate(wave2 = str_c("Wave ", wave)) %>% 
+  ggplot(aes(p3_hh, p1_hh,
+             color = as.factor(sim4_hh), alpha = as.factor(sim3_hh))) +
+  geom_point() +
+  geom_hline(aes(yintercept = p1_75_hh)) +
+  geom_vline(aes(xintercept = p3_75_hh)) +
+  facet_wrap(~ wave2) +
+  theme_bw() +
+  labs(y = "P(R initial)",
+       x = "P(R followup | NR initial)",
+       color = "In Simulation 4",
+       alpha = "In Simulation 3")
+
+
 
 
 
