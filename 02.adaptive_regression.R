@@ -481,8 +481,6 @@ new_data5 <- new_data5 %>%
 
  
 new_data6 <- new_data5 %>% 
-  left_join(quant_hh) %>% 
-  ungroup() %>% 
   mutate(sum_p_hh = p1_hh + (1 - p3_hh)) %>% 
   group_by(wave) %>%
   arrange(p1_hh) %>% 
@@ -493,7 +491,7 @@ new_data6 <- new_data5 %>%
          sim2_hh = ifelse(prop < 0.25, "No", "Yes")) %>% 
   arrange(sum_p_hh) %>% 
   mutate(prop = row_number()/max(row_number()),
-         sim3_hh = ifelse(prop < 0.75, "Yes", "No")) %>%
+         sim4_hh = ifelse(prop < 0.75, "Yes", "No")) %>%
   select(-prop) %>% 
   ungroup() 
   
@@ -605,18 +603,20 @@ p1_75_hh <- new_data7 %>%
 
 p3_75_hh <- new_data7 %>% 
   group_by(wave) %>% 
-  filter(sim2_hh == "Yes") %>% 
+  filter(sim2_hh == "No") %>% 
   summarise(p3_75_hh = max(p3_hh))
 
 
 new_data7 %>%
   mutate(wave2 = str_c("Wave ", wave)) %>% 
+  left_join(p1_75_hh, by = "wave") %>% 
+  left_join(p3_75_hh, by = "wave") %>% 
   ggplot(aes(p3_hh, p1_hh,
              color = as.factor(sim4_hh), alpha = as.factor(sim3_hh))) +
   geom_point() +
+  facet_wrap(~ wave2) +
   geom_hline(aes(yintercept = p1_75_hh)) +
   geom_vline(aes(xintercept = p3_75_hh)) +
-  facet_wrap(~ wave2) +
   theme_bw() +
   labs(y = "P(R initial)",
        x = "P(R followup | NR initial)",
@@ -640,7 +640,41 @@ nr_calls_saved_hh %>% print(n = 100)
 write_csv(nr_calls_saved_hh, "./results/call_save_hh.csv")
 
 
+# graph with number of 
 
+savings_data <- rbind(mutate(nr_calls_saved, level = "Individual"),
+      mutate(nr_calls_saved_hh, level = "Household")) %>% 
+  filter(selected == "No") %>% 
+  mutate(sim = str_remove(sim , "_hh"),
+         sim = str_replace(sim, "sim", "Simulation "),
+         wave2 = str_c("Wave ", wave))
+
+savings_data %>% 
+  group_by(sim, level) %>% 
+  summarise(prop = mean(prop)) %>% 
+  ggplot(aes(sim, prop, fill = level)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_y_continuous(breaks = seq(0.05, 0.25, 0.05)) +
+  geom_hline(yintercept = seq(0.05, 0.25, 0.05), color = "white") + 
+  theme_bw() +
+  labs(x = "Simulation",
+       y = "Proportion of calls saved",
+       fill = "Level")
+
+savings_data %>% 
+  mutate(level = as.factor(level) %>% fct_rev(),
+         sim = as.factor(sim) %>% fct_rev(),
+         wave2 = as.factor(wave2)) %>% 
+  ggplot(aes(sim, prop, fill = wave2)) + 
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_y_continuous(breaks = seq(0.05, 0.25, 0.05)) +
+  facet_wrap(~level) + 
+  geom_hline(yintercept = seq(0.05, 0.25, 0.05), color = "white") + 
+  theme_bw() +
+  labs(x = "Simulation",
+       y = "Proportion of calls saved",
+       fill = "Level") +
+  coord_flip()
 
 
 
@@ -670,13 +704,13 @@ new_data8 <- new_data7 %>%
 
 # bring together outcome and simulation
 out_data <- data_outl %>% 
-  filter(wave > 2) %>% 
+  # filter(wave > 2) %>% 
   left_join(new_data8, by = c("pidp", "wave"))
 
 
 # code outcome as non_response if we didn't followup
 
-count(out_data, out, out2, sim1_hh)
+count(out_data, wave, out, out2, sim1_hh)
 
 
 
@@ -721,10 +755,19 @@ rr2 <- rr %>%
                                "Sim 4" = "out2.sim4_hh"),
          level = ifelse(str_detect(outcome, "hh"), "Household", "Individual")) 
 
-rr2 %>% 
+
+w1_info <- rr2 %>%
+  filter(wave == 2) %>% 
+  mutate(wave = 1,
+         value = 1)
+
+
+rr2 %>%
+  rbind(w1_info) %>% 
   ggplot(aes(wave, value, color = outcome2, 
              shape = level, linetype = level)) + 
   geom_point() + geom_line(aes(group = outcome)) +
+  scale_x_continuous(breaks = 1:6) +
   theme_bw() +
   labs(x = "Wave", y = "Response rate", color = "Simulation type",
        shape = "Level", linetype = "Level")
@@ -733,8 +776,17 @@ write.csv(rr2, "./results/conference/resp_rate.csv")
 ggsave("./results/rr_selection_plots.png", dpi = 500)
 
 
+# to do 
+# 
+# calculate RR for balanced data
+#
 
 
+## For wave t, this is calculated as the proportion of initial wave
+## respondents that are interviewed every wave from the initial wave to wave t,
+## excluding those who have moved out of scope. If an initial wave respondent is
+## not interviewed in any subsequent wave through to wave t, then they are not
+## counted in the numerator.
 
 
 
