@@ -1,6 +1,11 @@
 
 
-if(Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
+
+# setup -------------------------------------------------------------------
+
+
+
+if (Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
   paste0(
     "C:/Users/",
     Sys.getenv("USERNAME"),
@@ -10,9 +15,7 @@ if(Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
 ))}
 
 # install packages from CRAN
-p_needed <-
-  c("tidyverse", "haven", "lubridate",
-    "devtools")
+p_needed <- c("tidyverse", "haven", "lubridate", "devtools")
 
 packages <- rownames(installed.packages())
 p_to_install <- p_needed[!(p_needed %in% packages)]
@@ -23,13 +26,14 @@ if (length(p_to_install) > 0) {
 
 lapply(p_needed, require, character.only = TRUE)
 
+
+# load functions
 functions <- str_subset(list.files("./functions/"), ".R")
 
 for (i in seq_along(functions)){
   source(str_c("./functions/", functions[i]))
 }
 
-knitr::opts_chunk$set(echo = F)
 
 load("./data/usw4.RData")
 
@@ -61,6 +65,27 @@ usw_small <- usw4 %>%
 
 
 # get R indicators for all the outcomes -----------------------------------
+
+
+
+rind_run <- function(outcome) {
+  response_model <- formula(str_c(i, " ~ ",
+                                  str_c(vars, collapse = " + ")))
+  
+  data <- usw_small %>%
+    select(vars, i) %>%
+    na.omit()
+  
+  indicator <- getRIndicator(response_model, data,
+                             withPartials = T)
+  
+  indicator
+}
+  
+rind_run(outcomes[1])  
+  
+  
+  
 
 
 for (i in outcomes) {
@@ -122,44 +147,6 @@ gc()
 
 
 load( "./data/rindicators_full.RData")
-
-
-
-
-# fun indicators for new outcomes
-# 
-# outcomes <- str_c(c("out.sp1", "out.sp3", "out.sp13"), "_",
-#                   rep(3:6, each = 3))
-# 
-# rindicators_select <- list(NULL)
-# index <- 1
-# 
-# for (i in outcomes) {
-# response_model <- formula(str_c(i, " ~ ",
-#                                 str_c(vars, collapse = " + ")))
-# 
-# data <- usw_small %>%
-#   select(vars, i) %>%
-#   na.omit()
-# 
-# indicator <- getRIndicator(response_model, data,
-#                             withPartials = T)
-# 
-# rindicators_select[[index]] <- indicator
-# 
-# index <- index + 1
-# 
-# }
-# 
-# save(rindicators_select, file = "./data/rindicators_select.RData")
-
-
-load("./data/rindicators_select.RData")
-str(rindicators_select[[1]])
-
-
-outcomes <- str_c(c("out.sp1", "out.sp3", "out.sp13"), "_",
-                  rep(3:6, each = 3))
 
 
 
@@ -238,7 +225,7 @@ colnames(big_data) <- c("var",
                         "PuUnadjSE",
                         "PcUnadjSE") 
 
-for(i in seq_along(res)) {
+for (i in seq_along(res)) {
   
   temp_data <- res[[i]] %>% 
     select(category, PuUnadj, PcUnadj,
@@ -285,63 +272,17 @@ ggsave(filename = "./results/cat_results.png",
 
 
 
-if(Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
-  paste0(
-    "C:/Users/",
-    Sys.getenv("USERNAME"),
-    "/Dropbox (The University of Manchester)/R/package"
-  ),
-  .libPaths()
-))}
-
-# install packages from CRAN
-p_needed <-
-  c("tidyverse", "haven", "lubridate",
-    "devtools")
-
-packages <- rownames(installed.packages())
-p_to_install <- p_needed[!(p_needed %in% packages)]
-
-if (length(p_to_install) > 0) {
-  install.packages(p_to_install)
-}
-
-lapply(p_needed, require, character.only = TRUE)
-
-functions <- str_subset(list.files("./functions/"), ".R")
-
-for (i in seq_along(functions)){
-  source(str_c("./functions/", functions[i]))
-}
-
-knitr::opts_chunk$set(echo = F)
-
-load("./data/usw4.RData")
-
-source("./functions/RISQ-R-indicators-v21.R")
 
 
 
 
 
-# make outcomes
-type_out <- c("out2", "out2_p1", 
-              "out2.sim1", "out2.sim2", "out2.sim3", "out2.sim4",
-              "out2.sim1_hh", "out2.sim2_hh", "out2.sim3_hh", "out2.sim4_hh")
-
-outcomes <- str_c(rep(type_out, 4), "_", rep(3:6, each = length(type_out)))
 
 
-# indepndent variables
-vars <- c("adultsinhh", "agecat", "benefit", "childreninhh",
-          "countryofbirth_fct", "education_fct", "employed_fct",
-          "ineducation", "health_sum", "likelymove",
-          "owner", "relationship_fct", "female", "urb")
+
+# delete? seems duplicated ------------------------------------------------
 
 
-# get data
-usw_small <- usw4 %>% 
-  select(pidp, outcomes, vars) 
 
 
 

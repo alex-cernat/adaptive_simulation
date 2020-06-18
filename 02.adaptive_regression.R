@@ -664,19 +664,21 @@ savings_data %>%
 savings_data %>% 
   mutate(level = as.factor(level) %>% fct_rev(),
          sim = as.factor(sim) %>% fct_rev(),
-         wave2 = as.factor(wave2)) %>% 
-  ggplot(aes(sim, prop, fill = wave2)) + 
+         wave2 = as.factor(wave2),
+         perc = prop * 100) %>% 
+  ggplot(aes(sim, perc, fill = wave2)) + 
   geom_bar(stat = "identity", position = "dodge") +
-  scale_y_continuous(breaks = seq(0.05, 0.25, 0.05)) +
+  scale_y_continuous(breaks = seq(5, 25, 5)) +
   facet_wrap(~level) + 
-  geom_hline(yintercept = seq(0.05, 0.25, 0.05), color = "white") + 
+  geom_hline(yintercept = seq(5, 25, 5), color = "white") + 
   theme_bw() +
   labs(x = "Simulation",
-       y = "Proportion of calls saved",
+       y = "Percentage of calls saved",
        fill = "Level") +
   coord_flip()
 
-
+ggsave("./results/savings.png", dpi = 500)
+  
 
 # calculate response rates for different scenarios ------------------------
 
@@ -772,7 +774,7 @@ rr2 %>%
   labs(x = "Wave", y = "Response rate", color = "Simulation type",
        shape = "Level", linetype = "Level")
 
-write.csv(rr2, "./results/conference/resp_rate.csv")
+write.csv(rr2, "./results/resp_rate.csv")
 ggsave("./results/rr_selection_plots.png", dpi = 500)
 
 
@@ -782,11 +784,57 @@ ggsave("./results/rr_selection_plots.png", dpi = 500)
 #
 
 
-## For wave t, this is calculated as the proportion of initial wave
-## respondents that are interviewed every wave from the initial wave to wave t,
-## excluding those who have moved out of scope. If an initial wave respondent is
-## not interviewed in any subsequent wave through to wave t, then they are not
-## counted in the numerator.
+
+# make rr balanced and delete any future  participation
+
+out_data_balanced <- out_data %>%
+  select(pidp, wave, matches("out2"), -matches("\\.p")) %>% 
+  arrange(pidp, wave) %>% 
+  group_by(pidp) %>% 
+  mutate_at(vars(matches("out")),
+            ~cummin(.))
+
+
+rr <- out_data_balanced %>%
+  group_by(wave) %>% 
+  select(out2, matches("out2.s")) %>% 
+  summarise_all(~mean(., na.rm = T))
+
+rr2 <- rr %>%
+  gather(-wave, value = value, key = outcome) %>% 
+  mutate(outcome2 = fct_recode(outcome,
+                               "No change" = "out2",
+                               "Sim 1" = "out2.sim1",
+                               "Sim 2" = "out2.sim2",
+                               "Sim 3" = "out2.sim3",
+                               "Sim 4" = "out2.sim4",
+                               "Sim 1" = "out2.sim1_hh",
+                               "Sim 2" = "out2.sim2_hh",
+                               "Sim 3" = "out2.sim3_hh",
+                               "Sim 4" = "out2.sim4_hh"),
+         level = ifelse(str_detect(outcome, "hh"), "Household", "Individual")) 
+
+
+w1_info <- rr2 %>%
+  filter(wave == 2) %>% 
+  mutate(wave = 1,
+         value = 1)
+
+
+rr2 %>%
+  rbind(w1_info) %>% 
+  ggplot(aes(wave, value, color = outcome2, 
+             shape = level, linetype = level)) + 
+  geom_point() + geom_line(aes(group = outcome)) +
+  scale_x_continuous(breaks = 1:6) +
+  theme_bw() +
+  labs(x = "Wave", y = "Balanced response rates", color = "Simulation type",
+       shape = "Level", linetype = "Level")
+
+ggsave("./results/rr_selection_plots_balaced.png")
+
+
+
 
 
 
