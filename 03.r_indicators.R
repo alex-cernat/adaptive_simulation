@@ -1,11 +1,16 @@
 
 
 
-# setup -------------------------------------------------------------------
+
+# 0. Set-up ---------------------------------------------------------------
 
 
+# clean memory
+rm(list = ls())
+gc()
 
-if (Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
+# use local packages on work machine
+if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
   paste0(
     "C:/Users/",
     Sys.getenv("USERNAME"),
@@ -14,30 +19,27 @@ if (Sys.getenv("USERNAME") == "msassac6"){.libPaths(c(
   .libPaths()
 ))}
 
-# install packages from CRAN
-p_needed <- c("tidyverse", "haven", "lubridate", "devtools")
+# load packages
+pkg <- c("tidyverse", "haven", "lubridate",
+         "devtools", "pROC")
 
-packages <- rownames(installed.packages())
-p_to_install <- p_needed[!(p_needed %in% packages)]
-
-if (length(p_to_install) > 0) {
-  install.packages(p_to_install)
-}
-
-lapply(p_needed, require, character.only = TRUE)
+sapply(pkg, library, character.only = T)
 
 
 # load functions
-functions <- str_subset(list.files("./functions/"), ".R")
+list.files("./functions/",
+           pattern = "\\.R$",
+           full.names = T) %>% 
+  map(source)
 
-for (i in seq_along(functions)){
-  source(str_c("./functions/", functions[i]))
-}
+source("./functions/RISQ-R-indicators-v21.R")
 
 
 load("./data/usw4.RData")
 
-source("./functions/RISQ-R-indicators-v21.R")
+
+
+# prep --------------------------------------------------------------------
 
 
 
@@ -66,14 +68,12 @@ usw_small <- usw4 %>%
 
 # get R indicators for all the outcomes -----------------------------------
 
-
-
 rind_run <- function(outcome) {
-  response_model <- formula(str_c(i, " ~ ",
+  response_model <- formula(str_c(outcome, " ~ ",
                                   str_c(vars, collapse = " + ")))
   
   data <- usw_small %>%
-    select(vars, i) %>%
+    select(vars, outcome) %>%
     na.omit()
   
   indicator <- getRIndicator(response_model, data,
@@ -81,72 +81,19 @@ rind_run <- function(outcome) {
   
   indicator
 }
-  
-rind_run(outcomes[1])  
-  
-  
-  
 
 
-for (i in outcomes) {
-  
-response_model <- formula(str_c(i, " ~ ",
-                                str_c(vars, collapse = " + ")))
-
-data <- usw_small %>%
-  select(vars, i) %>%
-  na.omit()
-
-indicator <- getRIndicator(response_model, data,
-                            withPartials = T)
-
-save(indicator, file = str_c("./data/rindicator_", i, ".RData"))
-gc()
-
-}
-
-
+# run only once...takes around 3 days
 # 
-# rindicators_full <- list(NULL)
+# ran <- list.files("C:/rinds/") %>% str_remove("\\.RData")
 # 
-# save(rindicators_full, file = "./data/rindicators_full.RData")
+# outs_remain <- outcomes[!outcomes %in% ran]
+#   
+# map(outs_remain, function(x){
+#   out <- rind_run(x)
+#   save(out, file = str_c("C:/rinds/", x, ".RData"))
+# })  
 
-
-
-
-# 
-# 
-# 
-# 
-# rindicators_p1 <- list(NULL)
-# 
-# for(i in 2:6) {
-# response_model <- formula(str_c("out ~ ",
-#                                 str_c(vars, collapse = " + ")))
-# 
-# data <- usw_small %>%
-#   select(vars, str_c("out_", i),
-#          str_c("int_phase_", i)) %>%
-#   rename_all(funs(str_remove(., str_c("_", i)))) %>%
-#   mutate(out = case_when(int_phase > 1 ~ 0,
-#                          int_phase == 1 ~ 1,
-#                          out == 0 ~ 0),
-#          int_phase = ifelse(is.na(int_phase), 0, int_phase)) %>%
-#   na.omit()
-# 
-# indicator <- getRIndicator(response_model, data,
-#                             withPartials = T)
-# 
-# rindicators_p1[[i]] <- indicator
-# 
-# }
-# 
-# save(rindicators_p1, file = "./data/rindicators_p1.RData")
-# load( "./data/rindicators_p1.RData")
-
-
-
-load( "./data/rindicators_full.RData")
 
 
 
@@ -155,378 +102,63 @@ load( "./data/rindicators_full.RData")
 
 # get r indicators
 
-rindicators_select[[1]]
+rinds_files <- list.files("./data/rinds/", full.names = T)
+
+rinds_list <- list(NULL)
+for (i in seq_along(rinds_files)) {
+  load(rinds_files[i])
+  rinds_list[[i]] <- out
+}
+
+
+names(rinds_list) <- str_remove_all(rinds_files, 
+                                    "\\./data/rinds/|out2\\.|\\.RData")
 
 
 
 
+# do graphs ---------------------------------------------------------------
 
 
 
 
-indicator <- rindicators_select[[1]]
+rindicators <- map_df(rinds_list, function(x) rind_result(x)[[1]]) %>% 
+  mutate(nms = rep(names(rinds_list), each = 2))
 
-out <- rind_result(indicator)
+rind <- rindicators %>% 
+  mutate(level = case_when(str_detect(nms, "hh") ~ "Household", 
+                           str_detect(nms, "out2_p1_") ~ "Observed p1",
+                           str_detect(nms, "out") ~ "Observed",
+                           TRUE ~ "Individual"),
+         nms2 = str_remove_all(nms, "_hh|_p1")) %>% 
+  separate(nms2, into = c("Simulation", "Wave")) %>%
+  mutate(ValueSE = as.numeric(ValueSE),
+         lci = Value - (1.96 * ValueSE),
+         uci = Value + (1.96 * ValueSE),
+         Simulation = str_replace(Simulation, "sim", "Simulation ")) 
 
-res <- out[[2]]
+rind_out <- filter(rind, str_detect(nms, "out")) %>% 
+  mutate(Simulation = ifelse(str_detect(nms, "out2_p1"), 
+                                        "P1 data",
+                                        "Full data"))
 
+rind2 <- rbind(
+  mutate(rind_out, level = "Individual"),
+  mutate(rind_out, level = "Household"),
+  filter(rind, str_detect(nms, "sim"))
+)
 
-tab1 <- res %>%
-  select(variable, Pu, Pc) %>% 
-  gather(Pu, Pc, key = type, value = value)
-
-res <- res %>%
-  select(variable, PuSE, PcSEApprox) %>% 
-  gather(PuSE, PcSEApprox, key = SE, value = valueSE) %>% 
-  select(-variable, -SE) %>% 
-  cbind(tab1) %>% 
-  select(variable, type, value, valueSE)
-
-r_vars <- ggplot(res, aes(x = variable, 
-                          y = value, 
-                          ymin = value - 1.96*valueSE, 
-                          ymax = value + 1.96*valueSE,
-                          color = type)) +
-  geom_point() + 
-  geom_errorbar(width = 0) +
-  coord_flip() +
+rind2 %>% 
+  filter(Indicator == "R") %>%
+  mutate(level = as.factor(level)) %>% 
+  ggplot(aes(Wave, Value, 
+             color = Simulation, 
+             group = Simulation)) +
+  geom_point() + geom_line() +
+  geom_errorbar(aes(ymin = lci, ymax = uci), 
+                width = 0, alpha = 0.5) +
+  facet_wrap(~ fct_rev(level)) +
   theme_bw() +
-  geom_hline(yintercept = 0)
+  labs(y = "R indicator")
 
-r_vars
-
-# ggsave(filename = "./results/var_results.png",
-#        dpi = 500)
-
-
-
-
-res <- out[[3]]
-
-# graphs <- list(NULL)
-
-# for(i in seq_along(res)) {
-# graphs[[i]] <- res[[i]] %>% 
-#   select(category, PuUnadj, PcUnadj) %>% 
-#   gather(PuUnadj, PcUnadj, key = type, value = value) %>% 
-#   ggplot(aes(value, category, color = type)) +
-#   geom_point(size = 5) +
-#   geom_vline(xintercept = 0) + 
-#   theme_bw() +
-#   labs(title = names(res)[i]) 
-# }
-
-big_data <- matrix(nrow = 0,
-                   ncol = 6)
-colnames(big_data) <- c("var", 
-                        "category", 
-                        "PuUnadj",
-                        "PcUnadj",
-                        "PuUnadjSE",
-                        "PcUnadjSE") 
-
-for (i in seq_along(res)) {
-  
-  temp_data <- res[[i]] %>% 
-    select(category, PuUnadj, PcUnadj,
-           PuUnadjSE, PcUnadjSE) %>% 
-    mutate(var = names(res)[i])
-  
-  big_data <- rbind(big_data, temp_data)
-  
-}
-
-big_data <- big_data %>% 
-  rename_all(funs(str_remove(., "Unadj")))
-
-big_data1 <- big_data %>% 
-  select(var, category, Pu, Pc) %>% 
-  gather(Pu, Pc, key = type, value = value)
-
-big_data <- big_data %>% 
-  select(var, category, PuSE, PcSE) %>% 
-  gather(PuSE, PcSE, key = typeSE, value = valueSE) %>%
-  select(-var, -category) %>% 
-  cbind(big_data1)
-
-
-ggplot(big_data, aes(category, y = value,
-                     ymin = value - 1.96*valueSE, 
-                     ymax = value + 1.96*valueSE,
-                     color = type)) +
-  geom_point() + geom_errorbar(width = 0) + coord_flip() +
-  theme_bw() +
-  facet_grid(var ~ . , scales = "free") +
-  geom_hline(yintercept = 0) +
-  theme(strip.text.y = element_text(size = 8, angle = 360),
-        axis.text.x = element_text(size = 5, vjust = 2))
-
-ggsave(filename = "./results/cat_results.png",
-       dpi = 500, width = 8, height = 12)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# delete? seems duplicated ------------------------------------------------
-
-
-
-
-
-# get R indicators for all the outcomes -----------------------------------
-# 
-# 
-# for (i in outcomes) {
-#   
-#   response_model <- formula(str_c(i, " ~ ",
-#                                   str_c(vars, collapse = " + ")))
-#   
-#   data <- usw_small %>%
-#     select(vars, i) %>%
-#     na.omit()
-#   
-#   indicator <- getRIndicator(response_model, data,
-#                              withPartials = T)
-#   
-#   save(indicator, file = str_c("./data/rindicator_", i, ".RData"))
-#   gc()
-#   
-# }
-
-
-rin_files <- list.files("./data/", pattern = "rindicator_", full.names = T)
-
-list_rind <- list(NULL)
-for (i in 1:length(rin_files)) {
-  load(rin_files[[i]])
-  list_rind[[i]] <- indicator
-}
-
-# 
-# rindicators_full <- list(NULL)
-# 
-# save(rindicators_full, file = "./data/rindicators_full.RData")
-
-
-
-
-# 
-# 
-# 
-# 
-# rindicators_p1 <- list(NULL)
-# 
-# for(i in 2:6) {
-# response_model <- formula(str_c("out ~ ",
-#                                 str_c(vars, collapse = " + ")))
-# 
-# data <- usw_small %>%
-#   select(vars, str_c("out_", i),
-#          str_c("int_phase_", i)) %>%
-#   rename_all(funs(str_remove(., str_c("_", i)))) %>%
-#   mutate(out = case_when(int_phase > 1 ~ 0,
-#                          int_phase == 1 ~ 1,
-#                          out == 0 ~ 0),
-#          int_phase = ifelse(is.na(int_phase), 0, int_phase)) %>%
-#   na.omit()
-# 
-# indicator <- getRIndicator(response_model, data,
-#                             withPartials = T)
-# 
-# rindicators_p1[[i]] <- indicator
-# 
-# }
-# 
-# save(rindicators_p1, file = "./data/rindicators_p1.RData")
-# load( "./data/rindicators_p1.RData")
-
-
-
-load( "./data/rindicators_full.RData")
-
-
-
-
-# fun indicators for new outcomes
-# 
-# outcomes <- str_c(c("out.sp1", "out.sp3", "out.sp13"), "_",
-#                   rep(3:6, each = 3))
-# 
-# rindicators_select <- list(NULL)
-# index <- 1
-# 
-# for (i in outcomes) {
-# response_model <- formula(str_c(i, " ~ ",
-#                                 str_c(vars, collapse = " + ")))
-# 
-# data <- usw_small %>%
-#   select(vars, i) %>%
-#   na.omit()
-# 
-# indicator <- getRIndicator(response_model, data,
-#                             withPartials = T)
-# 
-# rindicators_select[[index]] <- indicator
-# 
-# index <- index + 1
-# 
-# }
-# 
-# save(rindicators_select, file = "./data/rindicators_select.RData")
-
-
-load("./data/rindicators_select.RData")
-str(rindicators_select[[1]])
-
-
-outcomes <- str_c(c("out.sp1", "out.sp3", "out.sp13"), "_",
-                  rep(3:6, each = 3))
-
-
-
-
-
-
-# get r indicators
-
-
-rin_files <- list.files("./data/", pattern = "rindicator_", full.names = T)
-
-list_rind <- list(NULL)
-for (i in 1:length(rin_files)) {
-  load(rin_files[[i]])
-  list_rind[[i]] <- indicator
-  names(list_rind)[i] <- str_remove_all(rin_files[i], ".+indicator_out2|\\.RData")
-}
-
-# function to get overall R indicators
-get_overall_rind <- function(x) {
-  tibble(
-    R = x$R,
-    RSE = x$RSE,
-    RUnadj = x$RUnadj,
-    RBiasFactor = x$RBiasFactor
-  )
-}
-
-map_df(list_rind, get_overall_rind) %>% 
-  mutate(model = names(list_rind),
-         wave = str_extract(model, "[0-9]$"))
-
-
-
-
-indicator <- list_rind[[1]]
-
-out <- rind_result(indicator)
-
-res <- out[[2]]
-
-
-tab1 <- res %>%
-  select(variable, Pu, Pc) %>% 
-  gather(Pu, Pc, key = type, value = value)
-
-res <- res %>%
-  select(variable, PuSE, PcSEApprox) %>% 
-  gather(PuSE, PcSEApprox, key = SE, value = valueSE) %>% 
-  select(-variable, -SE) %>% 
-  cbind(tab1) %>% 
-  select(variable, type, value, valueSE)
-
-r_vars <- ggplot(res, aes(x = variable, 
-                          y = value, 
-                          ymin = value - 1.96*valueSE, 
-                          ymax = value + 1.96*valueSE,
-                          color = type)) +
-  geom_point() + 
-  geom_errorbar(width = 0) +
-  coord_flip() +
-  theme_bw() +
-  geom_hline(yintercept = 0)
-
-r_vars
-
-# ggsave(filename = "./results/var_results.png",
-#        dpi = 500)
-
-
-
-
-res <- out[[3]]
-
-# graphs <- list(NULL)
-
-# for(i in seq_along(res)) {
-# graphs[[i]] <- res[[i]] %>% 
-#   select(category, PuUnadj, PcUnadj) %>% 
-#   gather(PuUnadj, PcUnadj, key = type, value = value) %>% 
-#   ggplot(aes(value, category, color = type)) +
-#   geom_point(size = 5) +
-#   geom_vline(xintercept = 0) + 
-#   theme_bw() +
-#   labs(title = names(res)[i]) 
-# }
-
-big_data <- matrix(nrow = 0,
-                   ncol = 6)
-colnames(big_data) <- c("var", 
-                        "category", 
-                        "PuUnadj",
-                        "PcUnadj",
-                        "PuUnadjSE",
-                        "PcUnadjSE") 
-
-for(i in seq_along(res)) {
-  
-  temp_data <- res[[i]] %>% 
-    select(category, PuUnadj, PcUnadj,
-           PuUnadjSE, PcUnadjSE) %>% 
-    mutate(var = names(res)[i])
-  
-  big_data <- rbind(big_data, temp_data)
-  
-}
-
-big_data <- big_data %>% 
-  rename_all(funs(str_remove(., "Unadj")))
-
-big_data1 <- big_data %>% 
-  select(var, category, Pu, Pc) %>% 
-  gather(Pu, Pc, key = type, value = value)
-
-big_data <- big_data %>% 
-  select(var, category, PuSE, PcSE) %>% 
-  gather(PuSE, PcSE, key = typeSE, value = valueSE) %>%
-  select(-var, -category) %>% 
-  cbind(big_data1)
-
-
-ggplot(big_data, aes(category, y = value,
-                     ymin = value - 1.96*valueSE, 
-                     ymax = value + 1.96*valueSE,
-                     color = type)) +
-  geom_point() + geom_errorbar(width = 0) + coord_flip() +
-  theme_bw() +
-  facet_grid(var ~ . , scales = "free") +
-  geom_hline(yintercept = 0) +
-  theme(strip.text.y = element_text(size = 8, angle = 360),
-        axis.text.x = element_text(size = 5, vjust = 2))
-
-ggsave(filename = "./results/cat_results.png",
-       dpi = 500, width = 8, height = 12)
-
-
+ggsave("./results/rindicators_overall.png", dpi = 500, width = 7)
