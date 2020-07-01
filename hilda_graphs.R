@@ -109,8 +109,24 @@ costs %>%
   facet_grid(mode~level) +
   theme_bw() +
   geom_vline(xintercept = c(2, 4), color = "white") +
-  labs(fill = "Wave", y = "Simulation", x = "Proportion saved")
+  labs(fill = "Simulation", y = "Wave", x = "Proportion saved")
 
 ggsave("./results/hilda_saving_main.png", dpi = 500, width = 7)
 
+
+
+
+costs %>% 
+  filter(sample == "Top-up") %>% 
+  mutate(sim2 = str_replace(sim, "sim", "Simulation "),
+         sim2 = as.factor(sim2)) %>% 
+  mutate(est = est * 100) %>% 
+  ggplot(aes(est, as.factor(wave) %>% fct_rev(), fill = sim2)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(mode~level) +
+  theme_bw() +
+  geom_vline(xintercept = c(2, 4), color = "white") +
+  labs(fill = "Simulation", y = "Wave", x = "Proportion saved")
+
+ggsave("./results/hilda_saving_topup.png", dpi = 500, width = 7)
 
