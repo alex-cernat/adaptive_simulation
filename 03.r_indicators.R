@@ -161,4 +161,6 @@ rind2 %>%
   theme_bw() +
   labs(y = "R indicator")
 
-ggsave("./results/rindicators_overall.png", dpi = 500, width = 7)
+ggsave("./results/ukhls_rindicators_overall.png", dpi = 500, width = 7)
+
+write_csv(rind2, "./results/us_rinds.csv")

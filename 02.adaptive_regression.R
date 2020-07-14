@@ -661,11 +661,13 @@ savings_data %>%
        y = "Proportion of calls saved",
        fill = "Level")
 
-savings_data %>% 
+savings_data <- savings_data %>% 
   mutate(level = as.factor(level) %>% fct_rev(),
          sim = as.factor(sim) %>% fct_rev(),
          wave2 = as.factor(wave2),
-         perc = prop * 100) %>% 
+         perc = prop * 100) 
+
+savings_data %>% 
   ggplot(aes(sim, perc, fill = wave2)) + 
   geom_bar(stat = "identity", position = "dodge") +
   scale_y_continuous(breaks = seq(5, 25, 5)) +
@@ -678,7 +680,8 @@ savings_data %>%
   coord_flip()
 
 ggsave("./results/savings.png", dpi = 500)
-  
+write_csv(savings_data, "./results/savings.csv")  
+
 
 # calculate response rates for different scenarios ------------------------
 
@@ -778,11 +781,6 @@ write.csv(rr2, "./results/resp_rate.csv")
 ggsave("./results/rr_selection_plots.png", dpi = 500)
 
 
-# to do 
-# 
-# calculate RR for balanced data
-#
-
 
 
 # make rr balanced and delete any future  participation
@@ -821,8 +819,11 @@ w1_info <- rr2 %>%
          value = 1)
 
 
-rr2 %>%
-  rbind(w1_info) %>% 
+
+rr2 <- rr2 %>%
+  rbind(w1_info) 
+
+rr2 %>% 
   ggplot(aes(wave, value, color = outcome2, 
              shape = level, linetype = level)) + 
   geom_point() + geom_line(aes(group = outcome)) +
@@ -830,6 +831,9 @@ rr2 %>%
   theme_bw() +
   labs(x = "Wave", y = "Balanced response rates", color = "Simulation type",
        shape = "Level", linetype = "Level")
+
+write.csv(rr2, "./results/resp_rate_balanced.csv")
+
 
 ggsave("./results/rr_selection_plots_balaced.png")
 
