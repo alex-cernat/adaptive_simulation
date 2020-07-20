@@ -49,6 +49,32 @@ hilda_rr <- read_csv("./data/hilda_rr.csv")
 hilda_costs <- read_csv("./data/hilda_costs_rvsd.csv")
 hilda_costs_avg <- read_csv("./data/hilda_costs_ave.csv")
 
+
+# replace sim2 with sim 1 for hilda
+
+hilda_rinds <- hilda_rinds %>% 
+  mutate(sim = case_when(sim == "sim1" ~ "sim2",
+                          sim == "sim2" ~ "sim1",
+                          TRUE ~ sim)) 
+
+
+hilda_rr <- hilda_rr %>% 
+  mutate(sim = case_when(sim == "sim1" ~ "sim2",
+                         sim == "sim2" ~ "sim1",
+                         TRUE ~ sim)) 
+
+hilda_costs <- hilda_costs %>% 
+  mutate(sim = case_when(sim == "sim1" ~ "sim2",
+                         sim == "sim2" ~ "sim1",
+                         TRUE ~ sim)) 
+
+hilda_costs_avg <- hilda_costs_avg %>% 
+  mutate(sim = case_when(sim == "sim1" ~ "sim2",
+                         sim == "sim2" ~ "sim1",
+                         TRUE ~ sim)) 
+
+
+
 # ukhls data
 rr_ukhls <- read_csv("./results/resp_rate.csv")
 
@@ -278,9 +304,10 @@ hilda_costs_avg %>%
   geom_bar(stat = "identity") +
   facet_grid(~ level2) +
   theme_bw() +
-  scale_x_continuous(breaks = seq(0, 12, by = 4), ) +
-  geom_vline(xintercept = seq(0, 8, by = 4), color = "white") +
+  scale_x_continuous(breaks = seq(0, 25, by = 5)) +
+  geom_vline(xintercept = seq(0, 25, by = 5), color = "white") +
   labs(fill = "Mode", y = "", x = "Proportion of calls saved")
+
 
 ggsave("./results/hilda_saving_avg.png", dpi = 500, width = 7)
 
