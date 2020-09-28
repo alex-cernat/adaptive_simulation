@@ -9,17 +9,7 @@
 rm(list = ls())
 gc()
 
-# use local packages on work machine
-if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
-  paste0(
-    "C:/Users/",
-    Sys.getenv("USERNAME"),
-    "/Dropbox (The University of Manchester)/R/package"
-  ),
-  .libPaths()
-))}
-
-# load packages
+# load packages from packrat
 pkg <- c("tidyverse", "haven", "lubridate",
          "devtools", "pROC")
 
@@ -83,16 +73,16 @@ rind_run <- function(outcome) {
 }
 
 
-# run only once...takes around 3 days
+# run only once...takes around 7 days
 # 
-# ran <- list.files("C:/rinds/") %>% str_remove("\\.RData")
-# 
-# outs_remain <- outcomes[!outcomes %in% ran]
-#   
-# map(outs_remain, function(x){
-#   out <- rind_run(x)
-#   save(out, file = str_c("C:/rinds/", x, ".RData"))
-# })  
+ran <- list.files("./data/rinds/") %>% str_remove("\\.RData")
+
+outs_remain <- outcomes[!outcomes %in% ran]
+
+map(outs_remain, function(x){
+  out <- rind_run(x)
+  save(out, file = str_c("./data/rinds/", x, ".RData"))
+})
 
 
 
@@ -102,7 +92,7 @@ rind_run <- function(outcome) {
 
 # get r indicators
 
-rinds_files <- list.files("./data/rinds/", full.names = T)
+rinds_files <- list.files("./data/rinds/", full.names = T)[-1]
 
 rinds_list <- list(NULL)
 for (i in seq_along(rinds_files)) {

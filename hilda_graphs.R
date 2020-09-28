@@ -18,14 +18,14 @@ rm(list = ls())
 gc()
 
 # use local packages on work machine
-if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
-  paste0(
-    "C:/Users/",
-    Sys.getenv("USERNAME"),
-    "/Dropbox (The University of Manchester)/R/package"
-  ),
-  .libPaths()
-))}
+# if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
+#   paste0(
+#     "C:/Users/",
+#     Sys.getenv("USERNAME"),
+#     "/Dropbox (The University of Manchester)/R/package"
+#   ),
+#   .libPaths()
+# ))}
 
 # load packages
 pkg <- c("tidyverse", "haven", "lubridate",

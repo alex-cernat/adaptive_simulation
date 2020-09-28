@@ -29,18 +29,7 @@
 rm(list = ls())
 gc()
 
-# use local packages on work machine
-if (Sys.getenv("USERNAME") == "msassac6") {.libPaths(c(
-  paste0(
-    "C:/Users/",
-    Sys.getenv("USERNAME"),
-    "/Dropbox (The University of Manchester)/R/package"
-  ),
-  .libPaths()
-))}
-
-
-# load packages
+# load packages from packrat
 pkg <- c("tidyverse", "haven", "lubridate", "purrr")
 
 sapply(pkg, library, character.only = T)
@@ -522,7 +511,7 @@ fct_vars <- c("status_p1", "last_daytime", "last_weekday",
 cont_vars <- c("days_int", "days_int2", "nrcalls", "nrcalls2",
                "noreply_ph1", "noreply2_ph1", "nrcalls_ph23")
 
-# make a vriable if we hav emissing call records (if missing both in phase 1 
+# make a variable if we have missing call records (if missing both in phase 1 
 # and after) code missing category for categorical and as 0 for continious
 
 usw2 <- data %>%
@@ -628,7 +617,7 @@ usw3 <- usw3 %>%
                         out_6 == 1, NA, out_6)
   ) 
 
-# make outcomes where we treat not issued cases as non-respndents instead of
+# make outcomes where we treat not issued cases as non-respondents instead of
 # ineligible
 
 usw3 <- usw3 %>% 
@@ -708,6 +697,27 @@ usw3 %>%
   arrange(desc(value)) %>% print(n = 55)
 
 
+
+# code any interviewing done if missing as no
+
+usw3 <- usw3 %>% 
+  mutate_at(vars(matches("anyinter_ph1")),
+            ~fct_recode(.,"No" = "missing")) 
+
+# in wave 6 the call records underestimte "any interview done" compared to the
+# previous waves, probably because of the new data colleciton agency
+# we use oberve outcomes to recode this in wave 6 
+
+
+usw3 <- usw3 %>% 
+  mutate(status_p1_6 = ifelse(hhint_ph1_6 == 1 | out_p1_6 == 1,
+                              as.character("any interviewing done"), 
+                              as.character(status_p1_6)) %>% 
+           as.factor(),
+         anyinter_ph1_6 = ifelse(status_p1_6 == "any interviewing done",
+                                 as.character("Yes"), 
+                                 as.character(anyinter_ph1_6)) %>% 
+           as.factor()) 
 
 # save data
 save(usw3, file = "./data/usw2.RData")
@@ -938,8 +948,9 @@ write_csv(desc_demo$`Categorical variables`,
 
 
 call_rec_vars_small <- str_subset(call_rec_vars, 
-                                  c("days_int2|nrcalls2|noreply2"),
-                                  negate = T)
+                                  c("days_int2|nrcalls2|noreply2|hhint"),
+                                  negate = T) %>% 
+  c("anyinter_ph1")
 
 
 eligible_calls <- map(2:6, function(x) {
