@@ -16,3 +16,7 @@ NULL
 *.txt
 *.png
 *.png
+/paper/ukhls_descriptives.xlsx
+.Rprofile
+.Rhistory
+*.Rproj
