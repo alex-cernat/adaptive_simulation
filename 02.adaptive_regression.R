@@ -16,7 +16,7 @@ gc()
 
 # load packages from packrat
 pkg <- c("tidyverse", "haven", "lubridate",
-    "devtools", "pROC")
+    "devtools", "pROC", "ModelGood")
 
 sapply(pkg, library, character.only = T)
 
@@ -168,7 +168,7 @@ model_fit %>%
   theme_bw() +
   labs(title = "R2 for models for two outcomes by wave")
 
-ggsave("./results/reg_r2.png", dpi = 500)
+# ggsave("./results/reg_r2.png", dpi = 500)
 
 
 
@@ -181,13 +181,13 @@ model_fit %>%
   theme_bw() +
   labs(title = "AUC for models for two outcomes by wave")
 
-ggsave("./results/reg_auc.png", dpi = 500)
+# ggsave("./results/reg_auc.png", dpi = 500)
 
 
 # export regression coefficients and model fit
 write_csv(model_fit, "./results/models_fit_p1p3.csv")
 write_csv(reg_coefs, "./results/reg_coeffs_p1p3.csv")
-
+save(list_res, file = "./results/reg_model.RData")
 
 # make loop to create predicted probabilities -----------------------------
 
@@ -240,7 +240,7 @@ new_data2 <- new_data2 %>%
                rep(3:6, each = 2))))
 
 
-# being in variables for not being issued and effort in phase 
+# bring in variables for not being issued and effort in phase 
 
 new_data2 <- usw3 %>% 
   select(pidp, matches("not_issued"), matches("ph23"), matches("hidp")) %>% 
@@ -451,13 +451,14 @@ new_data5 %>%
        color = "In Simulation 4",
        alpha = "In Simulation 3")
 
+write_rds(new_data5, "./data/new_data5.rds")
 
- ggsave("./results/prob_plots_sim3.png", dpi = 300)
+# ggsave("./results/prob_plots_sim3.png", dpi = 300)
 
  
  
 
-# Calculate simualtion groups at household level --------------------------
+# Calculate simulation groups at household level --------------------------
 
 
 
@@ -616,6 +617,61 @@ new_data7 %>%
 
 
 
+# select randomly 25% hh in each wave
+set.seed(12345)
+count(new_data7, wave, sim1_hh)
+
+
+
+
+simr_list_hh <- list(NULL)
+
+for (i in 3:6) {
+  
+  # select only valid data, variables of interest
+  test_dat <- new_data7 %>%
+    filter(wave == i) %>%
+    select(pidp, hidp, wave) %>% 
+    ungroup() %>%
+    na.omit() %>%
+    arrange(sample(1:nrow(.), nrow(.))) %>% # randomize order
+    mutate(simr_hh = "Yes") 
+    
+  
+  
+  # starting point for simulation, no missing
+  miss_prop <- 0
+  
+  # loop until 25% was selected
+  while (miss_prop < 0.25) {
+    
+    
+    # choose a random hh not to follow
+    test_dat <- test_dat %>%
+      mutate(simr_hh = ifelse(hidp %in% 
+                                sample(
+                                  unique(
+                                    test_dat$hidp[test_dat$simr_hh == "Yes"]
+                                    ), 1), "No", simr_hh))
+             
+         
+    miss_prop <- table(test_dat$simr_hh) %>% prop.table() %>% .[1]
+    
+    # print to see progress
+    print(str_c("wave ", i))
+    print(str_c("Miss prop:", round(miss_prop, 3)))
+  }
+  
+  # put results together
+  simr_list_hh[[i]] <- select(test_dat, pidp, wave, simr_hh)
+  
+}
+
+new_data7 <- left_join(new_data7, reduce(simr_list_hh, rbind),
+                       by = c("pidp", "wave"))
+  
+
+
 
 # save as datafile
 nr_calls_saved_hh <- map(sim_vars_hh, get_calls_saved, data = new_data7) %>% 
@@ -628,6 +684,22 @@ nr_calls_saved_hh %>% print(n = 100)
 
 # save as csv
 write_csv(nr_calls_saved_hh, "./results/call_save_hh.csv")
+
+
+# get saves for random sim
+
+
+# save as datafile
+nr_calls_saved_hh_r <- map("simr_hh", get_calls_saved, data = new_data7) %>% 
+  map(function(x) setNames(x, c("wave", "selected", "sum_calls", "prop"))) %>% 
+  reduce(rbind) %>%
+  ungroup() %>% 
+  mutate(sim = rep("simr_hh", 8))
+
+
+# save as csv
+write_csv(nr_calls_saved_hh_r, "./results/call_save_hh_random.csv")
+
 
 
 # graph with number of 
@@ -657,20 +729,21 @@ savings_data <- savings_data %>%
          wave2 = as.factor(wave2),
          perc = prop * 100) 
 
-savings_data %>% 
-  ggplot(aes(sim, perc, fill = wave2)) + 
-  geom_bar(stat = "identity", position = "dodge") +
-  scale_y_continuous(breaks = seq(5, 25, 5)) +
-  facet_wrap(~level) + 
-  geom_hline(yintercept = seq(5, 25, 5), color = "white") + 
-  theme_bw() +
-  labs(x = "Simulation",
-       y = "Percentage of calls saved",
-       fill = "Level") +
-  coord_flip()
-
-ggsave("./results/savings.png", dpi = 500)
-write_csv(savings_data, "./results/savings.csv")  
+# 
+# savings_data %>% 
+#   ggplot(aes(sim, perc, fill = wave2)) + 
+#   geom_bar(stat = "identity", position = "dodge") +
+#   scale_y_continuous(breaks = seq(5, 25, 5)) +
+#   facet_wrap(~level) + 
+#   geom_hline(yintercept = seq(5, 25, 5), color = "white") + 
+#   theme_bw() +
+#   labs(x = "Simulation",
+#        y = "Percentage of calls saved",
+#        fill = "Level") +
+#   coord_flip()
+# 
+# ggsave("./results/savings.png", dpi = 500)
+# write_csv(savings_data, "./results/savings.csv")  
 
 
 # calculate response rates for different scenarios ------------------------
@@ -725,7 +798,9 @@ out_data <- out_data %>%
          out2.sim3_hh = case_when(sim3_hh == "No" & out2 == 1 ~ 0,
                                TRUE ~ out2),
          out2.sim4_hh = case_when(sim4_hh == "No" & out2 == 1 ~ 0,
-                               TRUE ~ out2))
+                               TRUE ~ out2),
+         out2.simr_hh = case_when(simr_hh == "No" & out2 == 1 ~ 0,
+                                  TRUE ~ out2))
 
 out_data %>% 
   count(out2, out2.sim1_hh, sim1_hh)
@@ -738,6 +813,7 @@ rr <- out_data %>%
   
 rr2 <- rr %>%
   gather(-wave, value = value, key = outcome) %>% 
+  filter(outcome != "out2.simr_hh") %>% 
   mutate(outcome2 = fct_recode(outcome,
                                "No change" = "out2",
                                "Sim 1" = "out2.sim1",
@@ -768,12 +844,14 @@ rr2 %>%
        shape = "Level", linetype = "Level")
 
 write.csv(rr2, "./results/resp_rate.csv")
-ggsave("./results/rr_selection_plots.png", dpi = 500)
+# ggsave("./results/rr_selection_plots.png", dpi = 500)
+
+# save response rates for random sim
+select(rr, wave, out2.simr_hh) %>% write.csv("./results/resp_rate_random.csv")
 
 
 
-
-# make rr balanced and delete any future  participation
+# make rr balanced and delete any future participation
 
 out_data_balanced <- out_data %>%
   select(pidp, wave, matches("out2"), -matches("\\.p")) %>% 
@@ -789,6 +867,7 @@ rr <- out_data_balanced %>%
   summarise_all(~mean(., na.rm = T))
 
 rr2 <- rr %>%
+  select(-out2.simr_hh) %>% 
   gather(-wave, value = value, key = outcome) %>% 
   mutate(outcome2 = fct_recode(outcome,
                                "No change" = "out2",
@@ -825,11 +904,12 @@ rr2 %>%
 write.csv(rr2, "./results/resp_rate_balanced.csv")
 
 
-ggsave("./results/rr_selection_plots_balaced.png")
+# ggsave("./results/rr_selection_plots_balaced.png")
 
 
-
-
+# save response rates for random sim
+select(rr, wave, out2.simr_hh) %>% 
+  write.csv("./results/resp_rate_balanced_random.csv")
 
 
 

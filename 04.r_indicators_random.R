@@ -1,3 +1,8 @@
+################
+# 
+# R indicators for random 25% households for JSSAM R&R
+# 
+################
 
 
 
@@ -36,14 +41,12 @@ load("./data/usw4.RData")
 
 
 # make outcomes
-type_out <- c("out2", "out2_p1", 
-              "out2.sim1", "out2.sim2", "out2.sim3", "out2.sim4",
-              "out2.sim1_hh", "out2.sim2_hh", "out2.sim3_hh", "out2.sim4_hh")
+type_out <- c("out2.simr_hh")
 
 outcomes <- str_c(rep(type_out, 4), "_", rep(3:6, each = length(type_out)))
 
 
-# indepndent variables
+# independent variables
 vars <- c("adultsinhh", "agecat", "benefit", "childreninhh",
           "countryofbirth_fct", "education_fct", "employed_fct",
           "ineducation", "health_sum", "likelymove",
@@ -53,21 +56,6 @@ vars <- c("adultsinhh", "agecat", "benefit", "childreninhh",
 # get data
 usw_small <- usw4 %>% 
   select(pidp, outcomes, vars) 
-
-
-
-# check outcome numbers for R&R3
-count(usw4, out2_p1_3, out2_3, 
-      not_issued_3, nocalls = ifelse(nrcalls_ph23_3 == 0, 1, 0))
-count(usw4, out2_p1_4, out2_4, not_issued_4,
-      nocalls = ifelse(nrcalls_ph23_4 == 0, 1, 0))
-count(usw4, out2_p1_5, out2_5, not_issued_5,
-      nocalls = ifelse(nrcalls_ph23_5 == 0, 1, 0))
-count(usw4, out2_p1_6, out2_6, not_issued_6,
-      nocalls = ifelse(nrcalls_ph23_6 == 0, 1, 0))
-
-count(usw4,nrcalls_2, nrcalls_ph23_2)
-
 
 
 
@@ -88,15 +76,15 @@ rind_run <- function(outcome) {
 }
 
 
-# run only once...takes around 7 days
+# run only once
 # 
-ran <- list.files("./data/rinds/") %>% str_remove("\\.RData")
+ran <- list.files("./data/rinds/random/") %>% str_remove("\\.RData")
 
 outs_remain <- outcomes[!outcomes %in% ran]
 
 map(outs_remain, function(x){
   out <- rind_run(x)
-  save(out, file = str_c("./data/rinds/", x, ".RData"))
+  save(out, file = str_c("./data/rinds/random/", x, ".RData"))
 })
 
 
@@ -107,7 +95,7 @@ map(outs_remain, function(x){
 
 # get r indicators
 
-rinds_files <- list.files("./data/rinds/", full.names = T)[-1]
+rinds_files <- list.files("./data/rinds/random/", full.names = T)
 
 rinds_list <- list(NULL)
 for (i in seq_along(rinds_files)) {
@@ -117,7 +105,7 @@ for (i in seq_along(rinds_files)) {
 
 
 names(rinds_list) <- str_remove_all(rinds_files, 
-                                    "\\./data/rinds/|out2\\.|\\.RData")
+                                    "\\./data/rinds/random/|out2\\.|\\.RData")
 
 
 
@@ -144,8 +132,8 @@ rind <- rindicators %>%
 
 rind_out <- filter(rind, str_detect(nms, "out")) %>% 
   mutate(Simulation = ifelse(str_detect(nms, "out2_p1"), 
-                                        "P1 data",
-                                        "Full data"))
+                             "P1 data",
+                             "Full data"))
 
 rind2 <- rbind(
   mutate(rind_out, level = "Individual"),
@@ -166,6 +154,51 @@ rind2 %>%
   theme_bw() +
   labs(y = "R indicator")
 
-ggsave("./results/ukhls_rindicators_overall.png", dpi = 500, width = 7)
+# ggsave("./results/ukhls_rindicators_overall.png", dpi = 500, width = 7)
 
-write_csv(rind2, "./results/us_rinds.csv")
+write_csv(rind2, "./results/us_rinds_random.csv")
+
+
+
+
+# (R-indicators, response rate, and attempts saved
+
+
+out_data <- select(usw_small, pidp, wave, matches("out2")) 
+
+rr <- out_data %>%
+  group_by(wave) %>% 
+  select(out2, matches("out2.s")) %>% 
+  summarise_all(~mean(., na.rm = T))
+
+rr2 <- rr %>%
+  gather(-wave, value = value, key = outcome) %>% 
+  filter(outcome != "out2.simr_hh") %>% 
+  mutate(outcome2 = fct_recode(outcome,
+                               "No change" = "out2",
+                               "Sim 1" = "out2.sim1",
+                               "Sim 2" = "out2.sim2",
+                               "Sim 3" = "out2.sim3",
+                               "Sim 4" = "out2.sim4",
+                               "Sim 1" = "out2.sim1_hh",
+                               "Sim 2" = "out2.sim2_hh",
+                               "Sim 3" = "out2.sim3_hh",
+                               "Sim 4" = "out2.sim4_hh"),
+         level = ifelse(str_detect(outcome, "hh"), "Household", "Individual")) 
+
+
+w1_info <- rr2 %>%
+  filter(wave == 2) %>% 
+  mutate(wave = 1,
+         value = 1)
+
+
+rr2 %>%
+  rbind(w1_info) %>% 
+  ggplot(aes(wave, value, color = outcome2, 
+             shape = level, linetype = level)) + 
+  geom_point() + geom_line(aes(group = outcome)) +
+  scale_x_continuous(breaks = 1:6) +
+  theme_bw() +
+  labs(x = "Wave", y = "Response rate", color = "Simulation type",
+       shape = "Level", linetype = "Level")

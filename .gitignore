@@ -12,3 +12,7 @@ packrat/lib*/
 *.gz
 *.RDS
 NULL
+*.xlsx
+*.txt
+*.png
+*.png

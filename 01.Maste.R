@@ -704,9 +704,9 @@ usw3 <- usw3 %>%
   mutate_at(vars(matches("anyinter_ph1")),
             ~fct_recode(.,"No" = "missing")) 
 
-# in wave 6 the call records underestimte "any interview done" compared to the
-# previous waves, probably because of the new data colleciton agency
-# we use oberve outcomes to recode this in wave 6 
+# in wave 6 the call records underestimate "any interview done" compared to the
+# previous waves, probably because of the new data collection agency
+# we use observe outcomes to recode this in wave 6 
 
 
 usw3 <- usw3 %>% 

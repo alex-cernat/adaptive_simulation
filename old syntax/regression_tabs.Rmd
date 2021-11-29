@@ -1,0 +1,25 @@
+---
+title: "regressions"
+author: "Alexandru Cernat"
+date: "18/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(texreg)
+library(knitr)
+
+knitr::opts_chunk$set(echo = F)
+
+
+```
+
+```{r results='asis'}
+load("./results/reg_model.RData")
+
+htmlreg(list_res[1:5], doctype = F)
+
+htmlreg(list_res[6:10])
+
+
+```
