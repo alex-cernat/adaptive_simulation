@@ -20,3 +20,5 @@ NULL
 .Rprofile
 .Rhistory
 *.Rproj
+*.xlsx
+/paper/*.xlsx
