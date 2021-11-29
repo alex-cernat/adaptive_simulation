@@ -22,3 +22,7 @@ NULL
 *.Rproj
 *.xlsx
 /paper/*.xlsx
+/paper/Summary of results NW latest.xlsx
+.Rhistory
+.Rprofile
+adaptive_simulation.Rproj
