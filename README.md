@@ -5,7 +5,7 @@ This is the code associated with the paper: Watson, N. & Cernat, A. (2021). Simu
 The data cleaning and analysis for the Understanding Society data was done using `R` (see session info bellow). The data cleaning and analysis of the HILDA data was done using Stata SAS. All the graphs were done in `R`.
 
 For `R` the following syntax produce the cleaning, analysis and results:
- - "01.Maste.R" - does the data cleaning
+ - "01.maste.R" - does the data cleaning
  - "02.adaptive_regression.R" - does regressions for estimating R indicators
  - "03.r_indicators.R" - explores R indicator results
  - "04.r_indicators_random.R" - creates R indicators for random targeting
