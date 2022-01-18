@@ -27,3 +27,4 @@ NULL
 .Rprofile
 adaptive_simulation.Rproj
 *.jpg
+old syntax/*
