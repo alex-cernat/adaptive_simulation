@@ -28,3 +28,5 @@ NULL
 adaptive_simulation.Rproj
 *.jpg
 old syntax/*
+*.Rmd
+*.html
