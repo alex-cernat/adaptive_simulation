@@ -30,3 +30,6 @@ adaptive_simulation.Rproj
 old syntax/*
 *.Rmd
 *.html
+*.Rprofile
+*.Rhistory
+*.Rproj
